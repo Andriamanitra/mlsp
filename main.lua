@@ -137,13 +137,14 @@ function LSPClient:handleResponse(method, response)
         -- FIXME: iterate over *all* currently open buffers
         onBufferOpen(micro.CurPane().Buf)
     elseif method == "textDocument/hover" then
-        -- TODO: figure out if language servers still use deprecated MarkedString / MarkedString[]
-        -- instead of MarkupContent which we handle correctly here
-        if response.result == nil then
-            infobar("no hover results")
-        else
-            local hoverText = response.result.contents.value:gsub("%s+", " ")
-            infobar(hoverText)
+        -- response.result.contents being a string is deprecated but as of 2023
+        -- pylsp still responds with {"contents": ""} for no results
+        if response.result == nil or response.result.contents == "" then
+            return infobar("no hover results")
+        elseif type(response.result.contents) == "string" then
+            infobar(response.result.contents)
+        elseif type(response.result.contents.value) == "string" then
+            infobar(response.result.contents.value)
         end
     else
         log("WARNING: dunno what to do with response to", method)
@@ -224,7 +225,7 @@ function log(...)
 end
 
 function infobar(text)
-    micro.InfoBar():Message("[µlsp] " .. text)
+    micro.InfoBar():Message("[µlsp] " .. text:gsub("%s+", " "))
 end
 
 
