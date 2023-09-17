@@ -7,10 +7,9 @@ local buffer = import("micro/buffer")
 local util = import("micro/util")
 local go_os = import("os")
 
--- currently the json.lua file needs to be placed either in
--- current working directory or /usr/local/share/lua/5.1/json.lua
--- FIXME: figure out how to do relative import instead
-local json = require "json"
+-- not sure if this is the best way to import code from plugin directory...
+config.AddRuntimeFile("mlsp", config.RTPlugin, "json.lua")
+local json = loadstring(config.ReadRuntimeFile(config.RTPlugin, "json"))()
 
 local lspServers = {
   go         = "gopls",
