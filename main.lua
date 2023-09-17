@@ -97,6 +97,11 @@ function LSPClient:notification(method, params)
     }
     if params ~= nil then
         msg.params = params
+    else
+        -- the spec allows params to be omitted but language server implementations
+        -- are buggy so we can put an empty object there for now
+        -- https://github.com/golang/go/issues/57459
+        msg.params = json.object
     end
     self:send(msg)
 end
@@ -109,6 +114,11 @@ function LSPClient:request(method, params)
     }
     if params ~= nil then
         msg.params = params
+    else
+        -- the spec allows params to be omitted but language server implementations
+        -- are buggy so we can put an empty object there for now
+        -- https://github.com/golang/go/issues/57459
+        msg.params = json.object
     end
     self.sentRequests[self.requestId] = method
     self.requestId = self.requestId + 1

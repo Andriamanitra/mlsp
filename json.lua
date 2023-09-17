@@ -22,7 +22,17 @@
 -- SOFTWARE.
 --
 
-local json = { _version = "0.1.2" }
+local json = { _version = "0.1.3" }
+
+-- by default the empty table ({} in lua) gets serialized into json array
+-- this hack allows us to use json.object when we want to emit an empty object
+-- instead
+local emptyMap_metatable = {}
+emptyMap_metatable.__index = emptyMap_metatable
+local emptyMap = {}
+setmetatable(emptyMap, emptyMap_metatable)
+json.object = emptyMap
+
 
 -------------------------------------------------------------------------------
 -- Encode
@@ -65,7 +75,7 @@ local function encode_table(val, stack)
 
   stack[val] = true
 
-  if rawget(val, 1) ~= nil or next(val) == nil then
+  if (rawget(val, 1) ~= nil or next(val) == nil) and (getmetatable(val) ~= emptyMap_metatable) then
     -- Treat as array -- check keys are valid and it is not sparse
     local n = 0
     for k in pairs(val) do
