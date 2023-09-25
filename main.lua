@@ -33,6 +33,14 @@ function startServer(bufpane, args)
     if not success then
         lspServerCommand = lspServers[bufpane.Buf:FileType()]
     end
+
+    for _, client in pairs(activeConnections) do
+        if client.command == lspServerCommand then
+            infobar(string.format("'%s' is already running", lspServerCommand))
+            return
+        end
+    end
+
     LSPClient:initialize(lspServerCommand)
 end
 
@@ -50,6 +58,7 @@ function LSPClient:initialize(lspServerCommand)
     activeConnections[clientId] = client
 
     client.clientId = clientId
+    client.command = lspServerCommand
     client.requestId = 0
     client.buffer = ""
     client.expectedLength = nil
@@ -265,8 +274,9 @@ end
 
 function onExit(text, userargs)
     local clientId = userargs[1]
+    activeConnections[clientId] = nil
     log(clientId, "exited")
-    -- infobar(clientId .. " exited")
+    infobar(clientId .. " exited")
 end
 
 function onBufferOpen(buf)
