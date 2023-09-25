@@ -17,11 +17,12 @@ git clone https://github.com/Andriamanitra/mlsp ~/.config/micro/plug/mlsp
 ```
 
 The plugin currently provides three commands:
-* `lsp` starts a language server. If you run it without arguments the plugin
-  tries to guess the right server by type of the currently open file, but you
-  can also give it a command to run to launch any language server of your
-  choice, for example `lsp "deno lsp"` (the quotes are required if the command
-  takes arguments).
+* `lsp "deno lsp"` (the quotes are required when the command takes arguments)
+  starts a language server by executing command `deno lsp`. Without arguments
+  the `lsp` command will try to guess the right server by looking at the
+  currently open filetype.
+* `lsp-stop "deno lsp"` stops the `deno lsp` language server. Without arguments
+  the `lsp-stop` command will stop *all* currently running language servers.
 * `hover` shows hover information for the code under cursor
 * `format` formats the buffer that is currently open
 

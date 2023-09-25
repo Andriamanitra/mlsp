@@ -25,6 +25,7 @@ local bufferStates = {}
 
 function init()
     config.MakeCommand("lsp", startServer, config.NoComplete)
+    config.MakeCommand("lsp-stop", stopServers, config.NoComplete)
     config.MakeCommand("hover", hoverAction, config.NoComplete)
     config.MakeCommand("format", formatAction, config.NoComplete)
 end
@@ -43,6 +44,17 @@ function startServer(bufpane, args)
     end
 
     LSPClient:initialize(lspServerCommand)
+end
+
+function stopServers(bufpane, args)
+    local success, lspServerCommand = pcall(function() return args[1] end)
+    local stopAll = not success
+
+    for _, client in pairs(activeConnections) do
+        if stopAll or client.command == lspServerCommand then
+            shell.JobStop(client.job)
+        end
+    end
 end
 
 LSPClient = {}
