@@ -15,8 +15,11 @@ local lspServers = {
   go         = "gopls",
   haskell    = "haskell-language-server-wrapper",
   javascript = "deno lsp",
+  json       = "deno lsp",
+  markdown   = "deno lsp",
   python     = "pylsp",
   rust       = "rust-analyzer",
+  typescript = "deno lsp",
   zig        = "zls",
 }
 
