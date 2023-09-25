@@ -17,6 +17,7 @@ local lspServers = {
   haskell    = "haskell-language-server-wrapper",
   javascript = "deno lsp",
   json       = "deno lsp",
+  lua        = "lua-lsp",
   markdown   = "deno lsp",
   python     = "pylsp",
   rust       = "rust-analyzer",
@@ -165,9 +166,10 @@ function LSPClient:handleResponse(method, response)
         -- FIXME: iterate over *all* currently open buffers
         onBufferOpen(micro.CurPane().Buf)
     elseif method == "textDocument/hover" then
-        -- response.result.contents being a string is deprecated but as of 2023
-        -- pylsp still responds with {"contents": ""} for no results
-        if response.result == nil or response.result.contents == "" then
+        -- response.result.contents being a string or array is deprecated but as of 2023
+        -- * pylsp still responds with {"contents": ""} for no results
+        -- * lua-lsp still responds with {"contents": []} for no results
+        if response.result == nil or #response.result.contents == 0 then
             return infobar("no hover results")
         elseif type(response.result.contents) == "string" then
             infobar(response.result.contents)
