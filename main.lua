@@ -26,6 +26,7 @@ local bufferStates = {}
 function init()
     config.MakeCommand("lsp", startServer, config.NoComplete)
     config.MakeCommand("hover", hoverAction, config.NoComplete)
+    config.MakeCommand("format", formatAction, config.NoComplete)
 end
 
 function startServer(bufpane, args)
@@ -84,7 +85,8 @@ function LSPClient:initialize(lspServerCommand)
         workspaceFolders = { { name = "root", uri = rootUri } },
         capabilities = {
             textDocument = { 
-                hover = { contentFormat = {"plaintext", "markdown"} }
+                hover = { contentFormat = {"plaintext", "markdown"} },
+                formatting = { dynamicRegistration = false }
             }
         }
     })
@@ -153,6 +155,16 @@ function LSPClient:handleResponse(method, response)
             infobar(response.result.contents)
         elseif type(response.result.contents.value) == "string" then
             infobar(response.result.contents.value)
+        end
+    elseif method == "textDocument/formatting" then
+        if response.error then
+            infobar(json.encode(response.error))
+        elseif response.result == nil or next(response.result) == nil then
+            infobar("formatted file (no changes)")
+        else
+            local textedits = response.result
+            editBuf(micro.CurPane().Buf, textedits)
+            infobar("formatted file")
         end
     else
         log("WARNING: dunno what to do with response to", method)
@@ -253,6 +265,24 @@ function hoverAction(bufpane)
     end
 end
 
+function formatAction(bufpane)
+    local buf = bufpane.Buf
+    local bufUri = string.format("file://%s", buf.AbsPath)
+
+    for clientId, client in pairs(activeConnections) do
+        client:request("textDocument/formatting", {
+            textDocument = { uri = bufUri },
+            options = {
+                -- FIXME: get tab size from micro options
+                tabSize = 4,
+                insertSpaces = true,
+                trimTrailingWhitespace = true,
+                insertFinalNewline = true,
+                trimFinalNewlines = true
+            }
+        })
+    end
+end
 
 
 
@@ -331,4 +361,33 @@ function string.split(s)
         table.insert(result, x)
     end
     return result
+end
+
+function editBuf(buf, textedits)
+    -- sort edits so the last edit (from the end of the file) happens first
+    -- in order to not mess up line numbers for other edits
+    function sortByRangeStart(texteditA, texteditB)
+        local a = texteditA.range.start
+        local b = texteditB.range.start
+        return b.line < a.line or (a.line == b.line and b.character < a.character)
+    end
+    table.sort(textedits, sortByRangeStart)
+
+    for _, textedit in pairs(textedits) do
+        local startPos = buffer.Loc(
+            textedit.range["start"].character,
+            textedit.range["start"].line
+        )
+        local endPos = buffer.Loc(
+            textedit.range["end"].character,
+            textedit.range["end"].line
+        )
+
+        buf:Remove(startPos, endPos)
+        buf:Insert(startPos, textedit.newText)
+    end
+
+    for clientId, client in pairs(activeConnections) do
+        client:didChange(buf)
+    end
 end
