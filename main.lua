@@ -12,6 +12,7 @@ config.AddRuntimeFile("mlsp", config.RTPlugin, "json.lua")
 local json = loadstring(config.ReadRuntimeFile(config.RTPlugin, "json"))()
 
 local lspServers = {
+  crystal    = "crystalline",
   go         = "gopls",
   haskell    = "haskell-language-server-wrapper",
   javascript = "deno lsp",
@@ -156,9 +157,11 @@ function LSPClient:handleResponse(method, response)
         if response.result.serverInfo then
             self.serverName = response.result.serverInfo.name
             self.serverVersion = response.result.serverInfo.version
+            infobar(string.format("Initialized %s version %s", self.serverName, self.serverVersion))
+        else
+            infobar(string.format("Initialized '%s' (no version information)", self.command))
         end
         self:notification("initialized")
-        infobar(string.format("Initialized %s version %s", self.serverName, self.serverVersion))
         -- FIXME: iterate over *all* currently open buffers
         onBufferOpen(micro.CurPane().Buf)
     elseif method == "textDocument/hover" then
