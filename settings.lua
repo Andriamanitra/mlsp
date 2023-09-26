@@ -8,6 +8,7 @@ diagnosticSeverity = {
 
 return {
     languageServers = {
+        c =          "clangd",
         crystal =    "crystalline",
         go =         "gopls",
         haskell =    "haskell-language-server-wrapper",
