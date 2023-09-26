@@ -169,8 +169,12 @@ function LSPClient:handleResponse(method, response)
         -- response.result.contents being a string or array is deprecated but as of 2023
         -- * pylsp still responds with {"contents": ""} for no results
         -- * lua-lsp still responds with {"contents": []} for no results
-        if response.result == nil or #response.result.contents == 0 then
-            return infobar("no hover results")
+        if (
+            response.result == nil or
+            response.result.contents == "" or
+            table.empty(response.result.contents)
+        ) then
+            infobar("no hover results")
         elseif type(response.result.contents) == "string" then
             infobar(response.result.contents)
         elseif type(response.result.contents.value) == "string" then
@@ -381,6 +385,10 @@ function string.split(s)
         table.insert(result, x)
     end
     return result
+end
+
+function table.empty(x)
+    return type(x) == "table" and next(x) == nil
 end
 
 function editBuf(buf, textedits)
