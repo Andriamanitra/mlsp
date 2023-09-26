@@ -1,5 +1,18 @@
 # List of language servers & how to get them
 
+* [C](#c)
+* [Crystal](#crystal)
+* [Go](#go)
+* [Haskell](#haskell)
+* [JavaScript/TypeScript](#javascripttypescript)
+* [JSON](#json)
+* [Lua](#lua)
+* [Markdown](#markdown)
+* [Python](#python)
+* [Ruby](#ruby)
+* [Rust](#rust)
+* [Zig](#zig)
+
 ## C
 
 - [Clangd](https://clangd.llvm.org/)
