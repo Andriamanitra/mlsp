@@ -1,0 +1,96 @@
+# List of language servers & how to get them
+
+## C
+
+- [Clangd](https://clangd.llvm.org/)
+  - Installation: [instructions](https://clangd.llvm.org/installation.html)
+  - Command: `clangd`
+
+## Crystal
+
+- [Crystalline](https://github.com/elbywan/crystalline)
+  - Installation:
+    [instructions](https://github.com/elbywan/crystalline#global-install)
+  - Command: `crystalline`
+
+## Go
+
+- [gopls](https://pkg.go.dev/golang.org/x/tools/gopls)
+  - Installation:
+    [instructions](https://pkg.go.dev/golang.org/x/tools/gopls#readme-installation)
+  - Command: `gopls`
+
+## Haskell
+
+- [HLS](https://github.com/haskell/haskell-language-server)
+  - Installation: use [ghcup](https://www.haskell.org/ghcup/)
+  - Command: `haskell-language-server-wrapper`
+
+## JavaScript/TypeScript
+
+- [deno](https://github.com/denoland/deno)
+  - Installation:
+    [instructions](https://github.com/denoland/deno_install/blob/master/README.md#deno_install)
+  - Command: `deno lsp`
+
+- [quick-lint-js](https://github.com/quick-lint/quick-lint-js)
+  - Only diagnostics (no formatting, hover information or code navigation)
+  - Installation: `npm install -g quick-lint-js`
+  - Command: `quick-lint-js --lsp`
+
+## JSON
+
+- [deno](https://github.com/denoland/deno)
+  - Installation:
+    [instructions](https://github.com/denoland/deno_install/blob/master/README.md#deno_install)
+  - Command: `deno lsp`
+
+## Lua
+
+- [lua-lsp](https://github.com/Alloyed/lua-lsp)
+  - Unmaintained. You are in for trouble if you want to get it to work with Lua
+    5.4.
+  - Installation: `luarocks install lua-lsp`
+    ([luarocks](https://github.com/luarocks/luarocks))
+  - Command: `lua-lsp`
+
+## Markdown
+
+- [deno](https://github.com/denoland/deno)
+  - Installation:
+    [instructions](https://github.com/denoland/deno_install/blob/master/README.md#deno_install)
+  - Command: `deno lsp`
+
+## Python
+
+- [pylsp](https://github.com/python-lsp/python-lsp-server)
+  - Installation: `pip install python-lsp-server[all]`
+  - Command: `pylsp`
+
+- [Pyright](https://github.com/microsoft/pyright)
+  - Installation: `npm install -g pyright`
+  - Command: `pyright-langserver --stdio`
+
+- [ruff-lsp](https://github.com/astral-sh/ruff-lsp)
+  - Only diagnostics and code actions (no formatting, hover information or code
+    navigation)
+  - Installation: `pip install ruff-lsp`
+  - Command: `ruff-lsp`
+
+## Ruby
+
+- [solargraph](https://github.com/castwide/solargraph)
+  - Installation: `gem install solargraph`
+  - Command: `solargraph stdio`
+
+## Rust
+
+- [rust-analyzer](https://github.com/rust-lang/rust-analyzer)
+  - Installation: `rustup component add rust-analyzer`
+  - Command: `rust-analyzer`
+
+## Zig
+
+- [zls](https://github.com/zigtools/zls)
+  - Installation: [instructions](https://github.com/zigtools/zls#installation)
+  - Command: `zls`

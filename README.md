@@ -15,6 +15,9 @@ Simply clone the repository to your micro plugins directory:
 git clone https://github.com/Andriamanitra/mlsp ~/.config/micro/plug/mlsp
 ```
 
+You will also need to install [language servers](LanguageServers.md) for the
+programming languages you want to use.
+
 The plugin currently provides four commands:
 
 - `lsp "deno lsp"` (the quotes are required when the command takes arguments)
