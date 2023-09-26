@@ -11,22 +11,10 @@ local go_os = import("os")
 config.AddRuntimeFile("mlsp", config.RTPlugin, "json.lua")
 local json = loadstring(config.ReadRuntimeFile(config.RTPlugin, "json"))()
 
-local lspServers = {
-  crystal    = "crystalline",
-  go         = "gopls",
-  haskell    = "haskell-language-server-wrapper",
-  javascript = "deno lsp",
-  json       = "deno lsp",
-  lua        = "lua-lsp",
-  markdown   = "deno lsp",
-  python     = "pylsp",
-  rust       = "rust-analyzer",
-  typescript = "deno lsp",
-  zig        = "zls",
-}
+config.AddRuntimeFile("mlsp", config.RTPlugin, "settings.lua")
+local settings = loadstring(config.ReadRuntimeFile(config.RTPlugin, "settings"))()
 
 local activeConnections = {}
-local bufferStates = {}
 
 function init()
     config.MakeCommand("lsp", startServer, config.NoComplete)
@@ -38,7 +26,7 @@ end
 function startServer(bufpane, args)
     local success, lspServerCommand = pcall(function() return args[1] end)
     if not success then
-        lspServerCommand = lspServers[bufpane.Buf:FileType()]
+        lspServerCommand = settings.languageServers[bufpane.Buf:FileType()]
     end
 
     for _, client in pairs(activeConnections) do
@@ -55,10 +43,15 @@ function stopServers(bufpane, args)
     local success, lspServerCommand = pcall(function() return args[1] end)
     local stopAll = not success
 
-    for _, client in pairs(activeConnections) do
+    local stoppedClients = {}
+    for clientId, client in pairs(activeConnections) do
         if stopAll or client.command == lspServerCommand then
-            shell.JobStop(client.job)
+            client:stop()
+            table.insert(stoppedClients, clientId)
         end
+    end
+    for idx, clientId in pairs(stoppedClients) do
+        activeConnections[clientId] = nil
     end
 end
 
@@ -67,12 +60,12 @@ LSPClient.__index = LSPClient
 
 function LSPClient:initialize(lspServerCommand)
     local args = lspServerCommand:split()
-    lspServerCommand = table.remove(args, 1)
+    runCommand = table.remove(args, 1)
 
     local client = {}
     setmetatable(client, LSPClient)
 
-    local clientId = string.format("%s-%04x", lspServerCommand, math.random(65536))
+    local clientId = string.format("%s-%04x", runCommand, math.random(65536))
     activeConnections[clientId] = client
 
     client.clientId = clientId
@@ -84,10 +77,10 @@ function LSPClient:initialize(lspServerCommand)
     client.serverName = nil
     client.serverVersion = nil
     client.sentRequests = {}
-    client.openFileVersions = {}
+    client.openFiles = {}
     -- the last parameter(s) to JobSpawn are userargs which get passed down to
     -- the callback functions (onStdout, onStderr, onExit)
-    client.job = shell.JobSpawn(lspServerCommand, args, onStdout, onStderr, onExit, clientId)
+    client.job = shell.JobSpawn(runCommand, args, onStdout, onStderr, onExit, clientId)
 
     if client.job.Err ~= nil then
         infobar(string.format("Error: %s", client.job.Err:Error()))
@@ -108,6 +101,13 @@ function LSPClient:initialize(lspServerCommand)
         }
     })
     return client
+end
+
+function LSPClient:stop()
+    for docUri, f in pairs(self.openFiles) do
+        f.buf:ClearMessages(self.clientId)
+    end
+    shell.JobStop(self.job)
 end
 
 function LSPClient:send(msg)
@@ -195,6 +195,27 @@ function LSPClient:handleResponse(method, response)
     end
 end
 
+function LSPClient:handleNotification(notification)
+    if notification.method == "textDocument/publishDiagnostics" then
+        local docUri = notification.params.uri:uriDecode()
+
+        if self.openFiles[docUri] == nil then
+            log("DEBUG: received diagnostics for document that is not open:", docUri)
+            return
+        end
+
+        local docVersion = notification.params.version
+        if docVersion ~= nil and docVersion ~= self.openFiles[docUri].version then
+            log("WARNING: received diagnostics for outdated version of document")
+            return
+        end
+        local buf = self.openFiles[docUri].buf
+        showDiagnostics(buf, self.clientId, notification.params.diagnostics)
+    else
+        log("WARNING: don't know what to do with that message")
+    end
+end
+
 function LSPClient:receiveMessage(text)
     local decodedMsg = json.decode(text)
     local request = self.sentRequests[decodedMsg.id]
@@ -202,18 +223,18 @@ function LSPClient:receiveMessage(text)
         self.sentRequests[decodedMsg.id] = nil
         self:handleResponse(request, decodedMsg)
     else
-        log("WARNING: don't know what to do with that message")
+        self:handleNotification(decodedMsg)
     end
 end
 
 function LSPClient:didOpen(buf)
     local ftype = buf:FileType()
     local bufText = util.String(buf:Bytes())
-    local bufUri = string.format("file://%s", buf.AbsPath)
-    self.openFileVersions[bufUri] = 1
+    local docUri = string.format("file://%s", buf.AbsPath)
+    self.openFiles[docUri] = {buf = buf, version = 1}
     self:notification("textDocument/didOpen", {
         textDocument = {
-            uri = bufUri,
+            uri = docUri,
             languageId = ftype,
             version = 1,
             text = bufText
@@ -225,8 +246,8 @@ function LSPClient:didChange(buf)
     local ftype = buf:FileType()
     local bufText = util.String(buf:Bytes())
     local bufUri = string.format("file://%s", buf.AbsPath)
-    local newVersion = (self.openFileVersions[bufUri] or 1) + 1
-    self.openFileVersions[bufUri] = newVersion
+    local newVersion = (self.openFiles[bufUri].version or 1) + 1
+    self.openFiles[bufUri].version = newVersion
     self:notification("textDocument/didChange", {
         textDocument = {
             uri = bufUri,
@@ -379,13 +400,25 @@ function onAutocomplete(bp) onRune(bp) end
 
 -- HELPER FUNCTIONS
 
-function string.split(s)
+function string.split(str)
     local result = {}
-    for x in string.gmatch(s, "[^%s]+") do
+    for x in str:gmatch("[^%s]+") do
         table.insert(result, x)
     end
     return result
 end
+
+function string.startsWith(str, needle)
+	return string.sub(str, 1, #needle) == needle
+end
+
+function string.uriDecode(str)
+    local function hexToChar(x)
+        return string.char(tonumber(x, 16))
+    end
+    return str:gsub("%%(%x%x)", hexToChar)
+end
+
 
 function table.empty(x)
     return type(x) == "table" and next(x) == nil
@@ -417,5 +450,49 @@ function editBuf(buf, textedits)
 
     for clientId, client in pairs(activeConnections) do
         client:didChange(buf)
+    end
+end
+
+function showDiagnostics(buf, owner, diagnostics)
+    local SEVERITY_ERROR = 1
+    local SEVERITY_WARNING = 2
+    local SEVERITY_INFORMATION = 3
+    local SEVERITY_HINT = 4
+
+    buf:ClearMessages(owner)
+
+    for _, diagnostic in pairs(diagnostics) do
+        if diagnostic.severity == nil then
+            diagnostic.severity = SEVERITY_INFORMATION
+        end
+
+        if diagnostic.severity <= settings.showDiagnostics then
+            local extraInfo = nil
+            if diagnostic.code ~= nil then
+                diagnostic.code = tostring(diagnostic.code)
+                if string.startsWith(diagnostic.message, diagnostic.code .. " ") then
+                    diagnostic.message = diagnostic.message:sub(2 + #diagnostic.code)
+                end
+            end
+            if diagnostic.source ~= nil and diagnostic.code ~= nil then
+                extraInfo = string.format("(%s %s) ", diagnostic.source, diagnostic.code)
+            elseif diagnostic.source ~= nil then
+                extraInfo = string.format("(%s) ", diagnostic.source)
+            elseif diagnostic.code ~= nil then
+                extraInfo = string.format("(%s) ", diagnostic.code)
+            end
+
+            local lineNumber = diagnostic.range.start.line + 1
+
+            local msgType = buffer.MTInfo
+            if diagnostic.severity == SEVERITY_WARNING then
+                msgType = buffer.MTWarning
+            elseif diagnostic.severity == SEVERITY_ERROR then
+                msgType = buffer.MTError
+            end
+
+            msg = string.format("[µlsp] %s%s", extraInfo or "", diagnostic.message)
+            buf:AddMessage(buffer.NewMessageAtLine(owner, msg, lineNumber, msgType))
+        end
     end
 end

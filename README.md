@@ -9,13 +9,13 @@ slightly more complete LSP client for micro.
 
 ## Installation
 
-Clone the repository to your micro plugins directory:
+Simply clone the repository to your micro plugins directory:
 
 ```
 git clone https://github.com/Andriamanitra/mlsp ~/.config/micro/plug/mlsp
 ```
 
-The plugin currently provides three commands:
+The plugin currently provides four commands:
 
 - `lsp "deno lsp"` (the quotes are required when the command takes arguments)
   starts a language server by executing command `deno lsp`. Without arguments
@@ -40,6 +40,7 @@ something like this to your `bindings.json`:
 ## Supported features
 
 - [x] get hover information
+- [x] show diagnostics (disabled by default, edit `settings.lua` to enable)
 - [x] format document
 - [ ] format selection
 - [ ] everything else
@@ -48,6 +49,6 @@ something like this to your `bindings.json`:
 
 - When using multiple language servers at the same time there is no good way to
   handle which one handles which request. So if you start both
-  `pyright-language-server --stdio` and `ruff-lsp` and then ask for hover
-  information you may get the result from either one (depending on which one is
-  slower to respond) even though only Pyright responded with something useful.
+  `pyright-langserver --stdio` and `ruff-lsp` and then ask for hover information
+  you may get the result from either one (depending on which one is slower to
+  respond) even though only Pyright responded with something useful.
