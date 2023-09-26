@@ -26,7 +26,12 @@ end
 function startServer(bufpane, args)
     local success, lspServerCommand = pcall(function() return args[1] end)
     if not success then
-        lspServerCommand = settings.languageServers[bufpane.Buf:FileType()]
+        local ftype = bufpane.Buf:FileType()
+        lspServerCommand = settings.languageServers[ftype]
+        if lspServerCommand == nil then
+            infobar(string.format("ERROR: no language server set up for file type '%s'", ftype))
+            return
+        end
     end
 
     for _, client in pairs(activeConnections) do
