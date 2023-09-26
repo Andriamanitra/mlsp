@@ -16,6 +16,7 @@ return {
         lua =        "lua-lsp",
         markdown =   "deno lsp",
         python =     "pylsp",
+        ruby =       "solargraph stdio",
         rust =       "rust-analyzer",
         typescript = "deno lsp",
         zig =        "zls",
