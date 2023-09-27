@@ -465,6 +465,12 @@ function showDiagnostics(buf, owner, diagnostics)
     local SEVERITY_WARNING = 2
     local SEVERITY_INFORMATION = 3
     local SEVERITY_HINT = 4
+    local severityTable = {
+        [SEVERITY_ERROR] = "error",
+        [SEVERITY_WARNING] = "warning",
+        [SEVERITY_INFORMATION] = "information",
+        [SEVERITY_HINT] = "hint"
+    }
 
     buf:ClearMessages(owner)
 
@@ -473,7 +479,7 @@ function showDiagnostics(buf, owner, diagnostics)
             diagnostic.severity = SEVERITY_INFORMATION
         end
 
-        if diagnostic.severity <= settings.showDiagnostics then
+        if settings.showDiagnostics[severityTable[diagnostic.severity]] then
             local extraInfo = nil
             if diagnostic.code ~= nil then
                 diagnostic.code = tostring(diagnostic.code)

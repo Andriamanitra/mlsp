@@ -1,11 +1,3 @@
-diagnosticSeverity = {
-    none = 0,
-    error = 1,
-    warning = 2,
-    information = 3,
-    hint = 4,
-}
-
 return {
     languageServers = {
         c =          "clangd",
@@ -22,5 +14,10 @@ return {
         typescript = "deno lsp",
         zig =        "zls",
     },
-    showDiagnostics = diagnosticSeverity.none
+    showDiagnostics = {
+        error = false,
+        warning = false,
+        information = false,
+        hint = false
+    }
 }
