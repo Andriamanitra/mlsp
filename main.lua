@@ -323,9 +323,11 @@ function formatAction(bufpane)
         client:request("textDocument/formatting", {
             textDocument = { uri = bufUri },
             options = {
-                -- FIXME: get tab size from micro options
-                tabSize = 4,
-                insertSpaces = true,
+                -- most servers completely ignore these values but tabSize and
+                -- insertSpaces are required according to the specification
+                -- https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#formattingOptions
+                tabSize = buf.Settings["tabsize"],
+                insertSpaces = buf.Settings["tabstospaces"],
                 trimTrailingWhitespace = true,
                 insertFinalNewline = true,
                 trimFinalNewlines = true
