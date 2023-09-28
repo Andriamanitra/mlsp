@@ -15,6 +15,7 @@ config.AddRuntimeFile("mlsp", config.RTPlugin, "settings.lua")
 local settings = loadstring(config.ReadRuntimeFile(config.RTPlugin, "settings"))()
 
 local activeConnections = {}
+local docBuffers = {}
 
 function init()
     config.MakeCommand("lsp", startServer, config.NoComplete)
@@ -109,8 +110,10 @@ function LSPClient:initialize(lspServerCommand)
 end
 
 function LSPClient:stop()
-    for docUri, f in pairs(self.openFiles) do
-        f.buf:ClearMessages(self.clientId)
+    for docUri, _file in pairs(self.openFiles) do
+        for _idx, docBuf in pairs(docBuffers[docUri]) do
+            docBuf:ClearMessages(self.clientId)
+        end
     end
     shell.JobStop(self.job)
 end
@@ -214,8 +217,13 @@ function LSPClient:handleNotification(notification)
             log("WARNING: received diagnostics for outdated version of document")
             return
         end
-        local buf = self.openFiles[docUri].buf
-        showDiagnostics(buf, self.clientId, notification.params.diagnostics)
+
+        -- in the usual case there is only one buffer with the same document so a loop
+        -- would not be necessary, but there may sometimes be multiple buffers with the
+        -- same exact document open!
+        for docUri, buf in pairs(docBuffers[docUri]) do
+            showDiagnostics(buf, self.clientId, notification.params.diagnostics)
+        end
     else
         log("WARNING: don't know what to do with that message")
     end
@@ -232,31 +240,57 @@ function LSPClient:receiveMessage(text)
     end
 end
 
+function LSPClient:textDocumentIdentifier(buf)
+    return { uri = string.format("file://%s", buf.AbsPath) }
+end
+
 function LSPClient:didOpen(buf)
-    local ftype = buf:FileType()
+    local textDocument = self:textDocumentIdentifier(buf)
+
+    -- if file is already open, do nothing
+    if self.openFiles[textDocument.uri] ~= nil then
+        return
+    end
+
     local bufText = util.String(buf:Bytes())
-    local docUri = string.format("file://%s", buf.AbsPath)
-    self.openFiles[docUri] = {buf = buf, version = 1}
+    self.openFiles[textDocument.uri] = {version = 1}
+    textDocument.languageId = buf:FileType()
+    textDocument.version = 1
+    textDocument.text = bufText
+
     self:notification("textDocument/didOpen", {
-        textDocument = {
-            uri = docUri,
-            languageId = ftype,
-            version = 1,
-            text = bufText
-        }
+        textDocument = textDocument
     })
 end
 
+function LSPClient:didClose(buf)
+    local textDocument = self:textDocumentIdentifier(buf)
+
+    if self.openFiles[textDocument.uri] ~= nil then
+        self.openFiles[textDocument.uri] = nil
+
+        self:notification("textDocument/didClose", {
+            textDocument = textDocument
+        })
+    end
+end
+
 function LSPClient:didChange(buf)
+    local textDocument = self:textDocumentIdentifier(buf)
+
+    if self.openFiles[textDocument.uri] == nil then
+        log("ERROR: tried to emit didChange event for document that was not open")
+        return
+    end
+
     local bufText = util.String(buf:Bytes())
-    local docUri = string.format("file://%s", buf.AbsPath)
-    local newVersion = (self.openFiles[docUri].version or 1) + 1
-    self.openFiles[docUri].version = newVersion
+    local newVersion = self.openFiles[textDocument.uri].version + 1
+
+    self.openFiles[textDocument.uri].version = newVersion
+    textDocument.version = newVersion
+
     self:notification("textDocument/didChange", {
-        textDocument = {
-            uri = docUri,
-            version = newVersion
-        },
+        textDocument = textDocument,
         contentChanges = {
             { text = bufText }
         }
@@ -264,13 +298,10 @@ function LSPClient:didChange(buf)
 end
 
 function LSPClient:didSave(buf)
-    -- TODO: refactor (TextDocumentIdentifier is shared between bunch of methods)
-    local bufText = util.String(buf:Bytes())
-    local docUri = string.format("file://%s", buf.AbsPath)
+    local textDocument = self:textDocumentIdentifier(buf)
+
     self:notification("textDocument/didSave", {
-        textDocument = {
-            uri = docUri
-        }
+        textDocument = textDocument
     })
 end
 
@@ -372,9 +403,46 @@ function onExit(text, userargs)
 end
 
 function onBufferOpen(buf)
+    if buf.Type.Kind ~= buffer.BTDefault then return end
+    if buf:FileType() == "unknown" then return end
+
+    local docUri = string.format("file://%s", buf.AbsPath)
+
+    if docBuffers[docUri] == nil then
+        docBuffers[docUri] = {}
+    end
+    table.insert(docBuffers[docUri], buf)
+
     for clientId, client in pairs(activeConnections) do
         client:didOpen(buf)
     end
+end
+
+function onQuit(bufpane)
+    local closedBuf = bufpane.Buf
+    if closedBuf.Type.Kind ~= buffer.BTDefault then return end
+
+    local docUri = string.format("file://%s", closedBuf.AbsPath)
+    if docBuffers[docUri] == nil then
+        return
+    elseif #docBuffers[docUri] > 1 then
+        -- there are still other buffers with the same file open
+        local remainingBuffers = {}
+        for _, buf in pairs(docBuffers[docUri]) do
+            if buf ~= closedBuf then
+                table.insert(remainingBuffers, buf)
+            end
+        end
+        docBuffers[docUri] = remainingBuffers
+    else
+        -- this was the last buffer in which this particular file was open
+        docBuffers[docUri] = nil
+
+        for clientId, client in pairs(activeConnections) do
+            client:didClose(closedBuf)
+        end
+    end
+
 end
 
 function onSave(bufpane)
