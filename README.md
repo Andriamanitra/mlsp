@@ -9,7 +9,7 @@ slightly more complete LSP client for micro.
 
 ## Demo
 
-[https://asciinema.org/a/VjUeCXM0p2JG9e6LRjngk9p8l](https://asciinema.org/a/VjUeCXM0p2JG9e6LRjngk9p8l)
+[https://asciinema.org/a/610761](https://asciinema.org/a/610761)
 
 ## Installation
 
