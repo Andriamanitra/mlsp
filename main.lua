@@ -248,18 +248,28 @@ function LSPClient:didOpen(buf)
 end
 
 function LSPClient:didChange(buf)
-    local ftype = buf:FileType()
     local bufText = util.String(buf:Bytes())
-    local bufUri = string.format("file://%s", buf.AbsPath)
-    local newVersion = (self.openFiles[bufUri].version or 1) + 1
-    self.openFiles[bufUri].version = newVersion
+    local docUri = string.format("file://%s", buf.AbsPath)
+    local newVersion = (self.openFiles[docUri].version or 1) + 1
+    self.openFiles[docUri].version = newVersion
     self:notification("textDocument/didChange", {
         textDocument = {
-            uri = bufUri,
+            uri = docUri,
             version = newVersion
         },
         contentChanges = {
             { text = bufText }
+        }
+    })
+end
+
+function LSPClient:didSave(buf)
+    -- TODO: refactor (TextDocumentIdentifier is shared between bunch of methods)
+    local bufText = util.String(buf:Bytes())
+    local docUri = string.format("file://%s", buf.AbsPath)
+    self:notification("textDocument/didSave", {
+        textDocument = {
+            uri = docUri
         }
     })
 end
@@ -364,6 +374,12 @@ end
 function onBufferOpen(buf)
     for clientId, client in pairs(activeConnections) do
         client:didOpen(buf)
+    end
+end
+
+function onSave(bufpane)
+    for clientId, client in pairs(activeConnections) do
+        client:didSave(bufpane.Buf)
     end
 end
 
