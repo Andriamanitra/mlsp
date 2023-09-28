@@ -7,6 +7,10 @@ don't work properly yet. Use at your own risk.
 [AndCake/micro-plugin-lsp](https://github.com/AndCake/micro-plugin-lsp) is a
 slightly more complete LSP client for micro.
 
+## Demo
+
+[https://asciinema.org/a/VjUeCXM0p2JG9e6LRjngk9p8l](https://asciinema.org/a/VjUeCXM0p2JG9e6LRjngk9p8l)
+
 ## Installation
 
 Simply clone the repository to your micro plugins directory:
