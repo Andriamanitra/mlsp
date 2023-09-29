@@ -19,5 +19,6 @@ return {
         warning = false,
         information = false,
         hint = false
-    }
+    },
+    tabAutocomplete = false
 }

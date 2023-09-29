@@ -22,7 +22,7 @@ git clone https://github.com/Andriamanitra/mlsp ~/.config/micro/plug/mlsp
 You will also need to install [language servers](LanguageServers.md) for the
 programming languages you want to use.
 
-The plugin currently provides four commands:
+The plugin currently provides five commands:
 
 - `lsp "deno lsp"` (the quotes are required when the command takes arguments)
   starts a language server by executing command `deno lsp`. Without arguments
@@ -32,6 +32,9 @@ The plugin currently provides four commands:
   the `lsp-stop` command will stop _all_ currently running language servers.
 - `hover` shows hover information for the code under cursor
 - `format` formats the buffer that is currently open
+- `autocomplete` for code completion suggestions. PROTIP: If you wish to use the
+  same key as micro's autocompletion (tab by default), enable `tabAutocomplete`
+  in `settings.lua` instead of binding `command:autocomplete` to a key!
 
 You can type the commands on micro command prompt or bind them to keys by adding
 something like this to your `bindings.json`:
@@ -48,6 +51,7 @@ something like this to your `bindings.json`:
 
 - [x] get hover information
 - [x] show diagnostics (disabled by default, edit `settings.lua` to enable)
+- [x] autocomplete using tab (disabled by default, edit `settings.lua` to enable)
 - [x] format document
 - [ ] format selection
 - [ ] everything else
@@ -59,3 +63,6 @@ something like this to your `bindings.json`:
   `pyright-langserver --stdio` and `ruff-lsp` and then ask for hover information
   you may get the result from either one (depending on which one is slower to
   respond) even though only Pyright responded with something useful.
+- Formatting large and messy files (minified JSON) with `deno lsp` causes the
+  editor to hang because it tries to do millions of tiny edits instead of doing
+  the entire file at once.

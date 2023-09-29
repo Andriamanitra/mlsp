@@ -16,12 +16,14 @@ local settings = loadstring(config.ReadRuntimeFile(config.RTPlugin, "settings"))
 
 local activeConnections = {}
 local docBuffers = {}
+local lastAutocompletion = -1
 
 function init()
     config.MakeCommand("lsp", startServer, config.NoComplete)
     config.MakeCommand("lsp-stop", stopServers, config.NoComplete)
     config.MakeCommand("hover", hoverAction, config.NoComplete)
     config.MakeCommand("format", formatAction, config.NoComplete)
+    config.MakeCommand("autocomplete", completionAction, config.NoComplete)
 end
 
 function startServer(bufpane, args)
@@ -198,6 +200,47 @@ function LSPClient:handleResponse(method, response)
             editBuf(micro.CurPane().Buf, textedits)
             infobar("formatted file")
         end
+    elseif method == "textDocument/completion" then
+        -- TODO: handle response.result.isIncomplete = true somehow
+        local buf = micro.CurPane().Buf
+        local completions = {}
+
+        if response.result ~= nil then
+            -- response.result can be either CompletionItem[] or an object
+            -- { isIncomplete: bool, items: CompletionItem[] }
+            completions = response.result.items or response.result
+        end
+
+        if #completions == 0 then
+            infobar("no completions")
+            buf.Suggestions = {}
+            buf.Completions = {}
+            buf.CurSuggestion = -1
+            buf.HasSuggestions = false
+            return
+        end
+
+        local rawcompletions = {}
+        for k, v in pairs(completions) do
+            table.insert(rawcompletions, v.insertText or v.label)
+        end
+
+        local cursor = buf:GetActiveCursor()
+
+        local backward = cursor.X
+        while backward > 0 and util.IsWordChar(util.RuneStr(cursor:RuneUnder(backward-1))) do
+            backward = backward - 1
+        end
+
+        cursor:SetSelectionStart(buffer.Loc(backward, cursor.Y))
+        cursor:SetSelectionEnd(buffer.Loc(cursor.X, cursor.Y))
+        cursor:DeleteSelection()
+
+        buf.Suggestions = rawcompletions
+        buf.Completions = rawcompletions
+        buf.CurSuggestion = -1
+        buf:CycleAutocomplete(true)
+
     else
         log("WARNING: dunno what to do with response to", method)
     end
@@ -377,6 +420,19 @@ function formatAction(bufpane)
     end
 end
 
+function completionAction(bufpane)
+    local buf = bufpane.Buf
+    local docUri = string.format("file://%s", buf.AbsPath)
+    local cursor = buf:GetActiveCursor()
+
+    for clientId, client in pairs(activeConnections) do
+        client:request("textDocument/completion", {
+            textDocument = { uri = docUri },
+            position = { line = cursor.Y, character = cursor.X }
+        })
+    end
+end
+
 
 
 -- EVENTS (LUA CALLBACKS)
@@ -451,8 +507,45 @@ function onSave(bufpane)
     end
 end
 
+function preAutocomplete(bufpane)
+    if not settings.tabAutocomplete then return end
+
+    -- "[µlsp] no autocompletions" message can be confusing if it does
+    -- not get cleared before falling back to micro's own completion
+    bufpane:ClearInfo()
+
+    local cursor = bufpane.Buf:GetActiveCursor()
+
+    -- use micro's own autocompleter if there is no LSP connection
+    if next(activeConnections) == nil then return end
+
+    -- don't autocomplete at the beginning of the line because you
+    -- often want tab to mean indentation there!
+    if cursor.X == 0 then return end
+
+    -- if last auto completion happened on the same line then don't
+    -- do completionAction again (because updating the completions
+    -- would mess up tabbing through the suggestions)
+    -- FIXME: invent a better heuristic than line number for this
+    if lastAutocompletion == cursor.Y then return end
+
+    local charBeforeCursor = util.RuneStr(cursor:RuneUnder(cursor.X-1))
+
+    if util.IsWordChar(charBeforeCursor) then
+        -- make sure there are at least two empty suggestions to capture
+        -- the autocompletion event – otherwise micro inserts '\t' before
+        -- the language server has a chance to reply with suggestions
+        bufpane.Buf.Suggestions = {"", ""}
+        bufpane.Buf.Completions = {"", ""}
+        bufpane.Buf.CurSuggestion = -1
+        bufpane.Buf:CycleAutocomplete(true)
+        completionAction(bufpane)
+        lastAutocompletion = cursor.Y
+    end
+end
+
 -- FIXME: figure out how to disable all this garbage when there are no active connections
-function onRune(bufpane, rune)
+function onDocumentEdit(bufpane)
     local buf = bufpane.Buf
     -- filetype is "unknown" for the command prompt
     if buf:FileType() == "unknown" then
@@ -464,28 +557,39 @@ function onRune(bufpane, rune)
     end
 end
 
-function onMoveLinesUp(bp) onRune(bp) end
-function onMoveLinesDown(bp) onRune(bp) end
-function onDeleteWordRight(bp) onRune(bp) end
-function onDeleteWordLeft(bp) onRune(bp) end
-function onInsertNewline(bp) onRune(bp) end
-function onInsertSpace(bp) onRune(bp) end
-function onBackspace(bp) onRune(bp) end
-function onDelete(bp) onRune(bp) end
-function onInsertTab(bp) onRune(bp) end
-function onUndo(bp) onRune(bp) end
-function onRedo(bp) onRune(bp) end
-function onCut(bp) onRune(bp) end
-function onCutLine(bp) onRune(bp) end
-function onDuplicateLine(bp) onRune(bp) end
-function onDeleteLine(bp) onRune(bp) end
-function onIndentSelection(bp) onRune(bp) end
-function onOutdentSelection(bp) onRune(bp) end
-function onOutdentLine(bp) onRune(bp) end
-function onIndentLine(bp) onRune(bp) end
-function onPaste(bp) onRune(bp) end
-function onPlayMacro(bp) onRune(bp) end
-function onAutocomplete(bp) onRune(bp) end
+function CursorUp(bufpane)       clearAutocomplete() end
+function CursorDown(bufpane)     clearAutocomplete() end
+function CursorPageUp(bufpane)   clearAutocomplete() end
+function CursorPageDown(bufpane) clearAutocomplete() end
+function CursorLeft(bufpane)     clearAutocomplete() end
+function CursorRight(bufpane)    clearAutocomplete() end
+function CursorStart(bufpane)    clearAutocomplete() end
+function CursorEnd(bufpane)      clearAutocomplete() end
+
+function onRune(bp, rune)        onDocumentEdit(bp); clearAutocomplete() end
+function onMoveLinesUp(bp)       onDocumentEdit(bp); clearAutocomplete() end
+function onMoveLinesDown(bp)     onDocumentEdit(bp); clearAutocomplete() end
+function onDeleteWordRight(bp)   onDocumentEdit(bp); clearAutocomplete() end
+function onDeleteWordLeft(bp)    onDocumentEdit(bp); clearAutocomplete() end
+function onInsertNewline(bp)     onDocumentEdit(bp); clearAutocomplete() end
+function onInsertSpace(bp)       onDocumentEdit(bp); clearAutocomplete() end
+function onBackspace(bp)         onDocumentEdit(bp); clearAutocomplete() end
+function onDelete(bp)            onDocumentEdit(bp); clearAutocomplete() end
+function onInsertTab(bp)         onDocumentEdit(bp); clearAutocomplete() end
+function onUndo(bp)              onDocumentEdit(bp); clearAutocomplete() end
+function onRedo(bp)              onDocumentEdit(bp); clearAutocomplete() end
+function onCut(bp)               onDocumentEdit(bp); clearAutocomplete() end
+function onCutLine(bp)           onDocumentEdit(bp); clearAutocomplete() end
+function onDuplicateLine(bp)     onDocumentEdit(bp); clearAutocomplete() end
+function onDeleteLine(bp)        onDocumentEdit(bp); clearAutocomplete() end
+function onIndentSelection(bp)   onDocumentEdit(bp); clearAutocomplete() end
+function onOutdentSelection(bp)  onDocumentEdit(bp); clearAutocomplete() end
+function onOutdentLine(bp)       onDocumentEdit(bp); clearAutocomplete() end
+function onIndentLine(bp)        onDocumentEdit(bp); clearAutocomplete() end
+function onPaste(bp)             onDocumentEdit(bp); clearAutocomplete() end
+function onPlayMacro(bp)         onDocumentEdit(bp); clearAutocomplete() end
+
+function onAutocomplete(bp)      onDocumentEdit(bp) end
 
 
 
@@ -592,4 +696,8 @@ function showDiagnostics(buf, owner, diagnostics)
             buf:AddMessage(buffer.NewMessageAtLine(owner, msg, lineNumber, msgType))
         end
     end
+end
+
+function clearAutocomplete()
+    lastAutocompletion = -1
 end
