@@ -21,6 +21,7 @@ local lastAutocompletion = -1
 function init()
     config.MakeCommand("lsp", startServer, config.NoComplete)
     config.MakeCommand("lsp-stop", stopServers, config.NoComplete)
+    config.MakeCommand("lsp-showlog", showLog, config.NoComplete)
     config.MakeCommand("hover", hoverAction, config.NoComplete)
     config.MakeCommand("format", formatAction, config.NoComplete)
     config.MakeCommand("autocomplete", completionAction, config.NoComplete)
@@ -63,6 +64,38 @@ function stopServers(bufpane, args)
     end
 end
 
+function showLog(bufpane, args)
+    local hasArgs, lspServerCommand = pcall(function() return args[1] end)
+
+    local foundClient
+    for clientId, client in pairs(activeConnections) do
+        if not hasArgs or client.command:startsWith(lspServerCommand) then
+            foundClient = client
+            break
+        end
+    end
+
+    if foundClient == nil then
+        infobar("no LSP client found")
+        return
+    end
+
+
+    if foundClient.stderr == "" then
+        infobar(foundClient.clientId .. " has not written anything to stderr")
+        return
+    end
+
+    local title = string.format("Log for '%s' (%s)", foundClient.command, foundClient.clientId)
+    local newBuffer = buffer.NewBuffer(foundClient.stderr, title)
+
+    newBuffer:SetOption("filetype", "text")
+    newBuffer.Type.scratch = true
+    newBuffer.Type.Readonly = true
+
+    micro.CurPane():HSplitBuf(newBuffer)
+end
+
 LSPClient = {}
 LSPClient.__index = LSPClient
 
@@ -79,6 +112,7 @@ function LSPClient:initialize(lspServerCommand)
     client.clientId = clientId
     client.command = lspServerCommand
     client.requestId = 0
+    client.stderr = ""
     client.buffer = ""
     client.expectedLength = nil
     client.serverCapabilities = {}
@@ -162,12 +196,20 @@ function LSPClient:request(method, params)
     self:send(msg)
 end
 
-function LSPClient:handleResponse(method, response)
+function LSPClient:handleResponseError(method, error)
+    infobar(string.format("%s (Error %d, %s)", error.message, error.code, method))
+
+    if method == "textDocument/completion" then
+        setCompletions({})
+    end
+end
+
+function LSPClient:handleResponseResult(method, result)
     if method == "initialize" then
-        self.capabilities = response.result.capabilities
-        if response.result.serverInfo then
-            self.serverName = response.result.serverInfo.name
-            self.serverVersion = response.result.serverInfo.version
+        self.capabilities = result.capabilities
+        if result.serverInfo then
+            self.serverName = result.serverInfo.name
+            self.serverVersion = result.serverInfo.version
             infobar(string.format("Initialized %s version %s", self.serverName, self.serverVersion))
         else
             infobar(string.format("Initialized '%s' (no version information)", self.command))
@@ -176,47 +218,37 @@ function LSPClient:handleResponse(method, response)
         -- FIXME: iterate over *all* currently open buffers
         onBufferOpen(micro.CurPane().Buf)
     elseif method == "textDocument/hover" then
-        -- response.result.contents being a string or array is deprecated but as of 2023
+        -- result.contents being a string or array is deprecated but as of 2023
         -- * pylsp still responds with {"contents": ""} for no results
         -- * lua-lsp still responds with {"contents": []} for no results
-        if (
-            response.result == nil or
-            response.result.contents == "" or
-            table.empty(response.result.contents)
-        ) then
+        if result == nil or result.contents == "" or table.empty(result.contents) then
             infobar("no hover results")
-        elseif type(response.result.contents) == "string" then
-            infobar(response.result.contents)
-        elseif type(response.result.contents.value) == "string" then
-            infobar(response.result.contents.value)
+        elseif type(result.contents) == "string" then
+            infobar(result.contents)
+        elseif type(result.contents.value) == "string" then
+            infobar(result.contents.value)
         end
     elseif method == "textDocument/formatting" then
-        if response.error then
-            infobar(json.encode(response.error))
-        elseif response.result == nil or next(response.result) == nil then
+        if result == nil or next(result) == nil then
             infobar("formatted file (no changes)")
         else
-            local textedits = response.result
+            local textedits = result
             editBuf(micro.CurPane().Buf, textedits)
             infobar("formatted file")
         end
     elseif method == "textDocument/completion" then
-        -- TODO: handle response.result.isIncomplete = true somehow
-        local buf = micro.CurPane().Buf
+        -- TODO: handle result.isIncomplete = true somehow
         local completions = {}
 
-        if response.result ~= nil then
-            -- response.result can be either CompletionItem[] or an object
+        if result ~= nil then
+            -- result can be either CompletionItem[] or an object
             -- { isIncomplete: bool, items: CompletionItem[] }
-            completions = response.result.items or response.result
+            completions = result.items or result
         end
 
         if #completions == 0 then
             infobar("no completions")
-            buf.Suggestions = {}
-            buf.Completions = {}
-            buf.CurSuggestion = -1
-            buf.HasSuggestions = false
+            setCompletions({})
             return
         end
 
@@ -225,7 +257,7 @@ function LSPClient:handleResponse(method, response)
             table.insert(rawcompletions, v.insertText or v.label)
         end
 
-        local cursor = buf:GetActiveCursor()
+        local cursor = micro.CurPane().Buf:GetActiveCursor()
 
         local backward = cursor.X
         while backward > 0 and util.IsWordChar(util.RuneStr(cursor:RuneUnder(backward-1))) do
@@ -236,11 +268,7 @@ function LSPClient:handleResponse(method, response)
         cursor:SetSelectionEnd(buffer.Loc(cursor.X, cursor.Y))
         cursor:DeleteSelection()
 
-        buf.Suggestions = rawcompletions
-        buf.Completions = rawcompletions
-        buf.CurSuggestion = -1
-        buf:CycleAutocomplete(true)
-
+        setCompletions(rawcompletions)
     else
         log("WARNING: dunno what to do with response to", method)
     end
@@ -277,7 +305,11 @@ function LSPClient:receiveMessage(text)
     local request = self.sentRequests[decodedMsg.id]
     if request then
         self.sentRequests[decodedMsg.id] = nil
-        self:handleResponse(request, decodedMsg)
+        if decodedMsg.error then
+            self:handleResponseError(request, decodedMsg.error)
+        else
+            self:handleResponseResult(request, decodedMsg.result)
+        end
     else
         self:handleNotification(decodedMsg)
     end
@@ -448,7 +480,9 @@ end
 
 function onStderr(text, userargs)
     local clientId = userargs[1]
-    log("<-(", clientId, "[stderr] )", text, "\n\n")
+    -- log("<-(", clientId, "[stderr] )", text, "\n\n")
+    local client = activeConnections[clientId]
+    client.stderr = client.stderr .. text
 end
 
 function onExit(text, userargs)
@@ -535,10 +569,7 @@ function preAutocomplete(bufpane)
         -- make sure there are at least two empty suggestions to capture
         -- the autocompletion event – otherwise micro inserts '\t' before
         -- the language server has a chance to reply with suggestions
-        bufpane.Buf.Suggestions = {"", ""}
-        bufpane.Buf.Completions = {"", ""}
-        bufpane.Buf.CurSuggestion = -1
-        bufpane.Buf:CycleAutocomplete(true)
+        setCompletions({"", ""})
         completionAction(bufpane)
         lastAutocompletion = cursor.Y
     end
@@ -700,4 +731,18 @@ end
 
 function clearAutocomplete()
     lastAutocompletion = -1
+end
+
+function setCompletions(completions)
+    local buf = micro.CurPane().Buf
+
+    buf.Suggestions = completions
+    buf.Completions = completions
+    buf.CurSuggestion = -1
+
+    if next(completions) == nil then
+        buf.HasSuggestions = false
+    else
+        buf:CycleAutocomplete(true)
+    end
 end
