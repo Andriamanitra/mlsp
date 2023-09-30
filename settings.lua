@@ -3,7 +3,7 @@ return {
         c =          "clangd",
         crystal =    "crystalline",
         go =         "gopls",
-        haskell =    "haskell-language-server-wrapper",
+        haskell =    "haskell-language-server-wrapper --lsp",
         javascript = "deno lsp",
         json =       "deno lsp",
         lua =        "lua-lsp",
@@ -20,5 +20,5 @@ return {
         information = false,
         hint = false
     },
-    tabAutocomplete = false
+    tabAutocomplete = true
 }

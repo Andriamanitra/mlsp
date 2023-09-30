@@ -37,7 +37,7 @@
 
 - [HLS](https://github.com/haskell/haskell-language-server)
   - Installation: use [ghcup](https://www.haskell.org/ghcup/)
-  - Command: `haskell-language-server-wrapper`
+  - Command: `haskell-language-server-wrapper --lsp`
 
 ## JavaScript/TypeScript
 
