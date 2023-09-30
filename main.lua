@@ -19,12 +19,28 @@ local docBuffers = {}
 local lastAutocompletion = -1
 
 function init()
+    micro.SetStatusInfoFn("mlsp.status")
     config.MakeCommand("lsp", startServer, config.NoComplete)
     config.MakeCommand("lsp-stop", stopServers, config.NoComplete)
     config.MakeCommand("lsp-showlog", showLog, config.NoComplete)
     config.MakeCommand("hover", hoverAction, config.NoComplete)
     config.MakeCommand("format", formatAction, config.NoComplete)
     config.MakeCommand("autocomplete", completionAction, config.NoComplete)
+end
+
+function status(buf)
+    local servers = {}
+    for clientId, client in pairs(activeConnections) do
+        local name = client.name or client.command:match("%S+")
+        table.insert(servers, name)
+    end
+    if #servers == 0 then
+        return "off"
+    elseif #servers == 1 then
+        return servers[1]
+    else
+        return string.format("[%s]", table.concat(servers, ","))
+    end
 end
 
 function startServer(bufpane, args)

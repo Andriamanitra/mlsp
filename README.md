@@ -56,6 +56,20 @@ something like this to your `bindings.json`:
 - [ ] format selection
 - [ ] everything else
 
+## Showing LSP information on statusline
+
+The plugin provides a function `mlsp.status` that can be used in the status line format.
+Here is an example configuration (`~/.config/micro/settings.json`) that uses it:
+```json
+{
+    "statusformatl": "$(filename) $(modified)($(line),$(col)) | ft:$(opt:filetype) | µlsp:$(mlsp.status)",
+}
+```
+See [micro documentation](https://github.com/zyedidia/micro/blob/master/runtime/help/options.md)
+and the built-in [status plugin](https://github.com/zyedidia/micro/blob/master/runtime/plugins/status/help/status.md)
+for all possible options.
+
+
 ## Known issues
 
 - When using multiple language servers at the same time there is no good way to
