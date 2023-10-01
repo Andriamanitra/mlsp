@@ -292,7 +292,7 @@ end
 
 function LSPClient:handleNotification(notification)
     if notification.method == "textDocument/publishDiagnostics" then
-        local filePath = notification.params.uri:uriDecode()
+        local filePath = notification.params.uri:match("file://(.*)$"):uriDecode()
 
         if self.openFiles[filePath] == nil then
             log("DEBUG: received diagnostics for document that is not open:", filePath)
