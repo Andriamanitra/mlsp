@@ -756,8 +756,10 @@ function showDiagnostics(buf, owner, diagnostics)
                 msgType = buffer.MTError
             end
 
-            msg = string.format("[µlsp] %s%s", extraInfo or "", diagnostic.message)
-            buf:AddMessage(buffer.NewMessageAtLine(owner, msg, lineNumber, msgType))
+            local startLoc = buffer.Loc(diagnostic.range.start.character, diagnostic.range.start.line)
+            local endLoc = buffer.Loc(diagnostic.range["end"].character, diagnostic.range["end"].line)
+            local msg = string.format("[µlsp] %s%s", extraInfo or "", diagnostic.message)
+            buf:AddMessage(buffer.NewMessage(owner, msg, startLoc, endLoc, msgType))
         end
     end
 end
