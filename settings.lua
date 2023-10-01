@@ -20,5 +20,5 @@ return {
         information = false,
         hint = false
     },
-    tabAutocomplete = true
+    tabAutocomplete = false
 }
