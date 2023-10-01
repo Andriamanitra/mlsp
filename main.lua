@@ -145,7 +145,7 @@ function LSPClient:initialize(lspServerCommand)
     end
 
     local wd, _ = go_os.Getwd()
-    local rootUri = string.format("file://%s", wd)
+    local rootUri = string.format("file://%s", wd:uriEncode())
 
     client:request("initialize", {
         processId = go_os.Getpid(),
@@ -162,8 +162,8 @@ function LSPClient:initialize(lspServerCommand)
 end
 
 function LSPClient:stop()
-    for docUri, _file in pairs(self.openFiles) do
-        for _idx, docBuf in pairs(docBuffers[docUri]) do
+    for filePath, _file in pairs(self.openFiles) do
+        for _idx, docBuf in pairs(docBuffers[filePath]) do
             docBuf:ClearMessages(self.clientId)
         end
     end
@@ -292,15 +292,15 @@ end
 
 function LSPClient:handleNotification(notification)
     if notification.method == "textDocument/publishDiagnostics" then
-        local docUri = notification.params.uri:uriDecode()
+        local filePath = notification.params.uri:uriDecode()
 
-        if self.openFiles[docUri] == nil then
-            log("DEBUG: received diagnostics for document that is not open:", docUri)
+        if self.openFiles[filePath] == nil then
+            log("DEBUG: received diagnostics for document that is not open:", filePath)
             return
         end
 
         local docVersion = notification.params.version
-        if docVersion ~= nil and docVersion ~= self.openFiles[docUri].version then
+        if docVersion ~= nil and docVersion ~= self.openFiles[filePath].version then
             log("WARNING: received diagnostics for outdated version of document")
             return
         end
@@ -308,7 +308,7 @@ function LSPClient:handleNotification(notification)
         -- in the usual case there is only one buffer with the same document so a loop
         -- would not be necessary, but there may sometimes be multiple buffers with the
         -- same exact document open!
-        for docUri, buf in pairs(docBuffers[docUri]) do
+        for filePath, buf in pairs(docBuffers[filePath]) do
             showDiagnostics(buf, self.clientId, notification.params.diagnostics)
         end
     else
@@ -332,19 +332,20 @@ function LSPClient:receiveMessage(text)
 end
 
 function LSPClient:textDocumentIdentifier(buf)
-    return { uri = string.format("file://%s", buf.AbsPath) }
+    return { uri = string.format("file://%s", buf.AbsPath:uriEncode()) }
 end
 
 function LSPClient:didOpen(buf)
     local textDocument = self:textDocumentIdentifier(buf)
+    local filePath = buf.AbsPath
 
     -- if file is already open, do nothing
-    if self.openFiles[textDocument.uri] ~= nil then
+    if self.openFiles[filePath] ~= nil then
         return
     end
 
     local bufText = util.String(buf:Bytes())
-    self.openFiles[textDocument.uri] = {version = 1}
+    self.openFiles[filePath] = {version = 1}
     textDocument.languageId = buf:FileType()
     textDocument.version = 1
     textDocument.text = bufText
@@ -356,9 +357,10 @@ end
 
 function LSPClient:didClose(buf)
     local textDocument = self:textDocumentIdentifier(buf)
+    local filePath = buf.AbsPath
 
-    if self.openFiles[textDocument.uri] ~= nil then
-        self.openFiles[textDocument.uri] = nil
+    if self.openFiles[filePath] ~= nil then
+        self.openFiles[filePath] = nil
 
         self:notification("textDocument/didClose", {
             textDocument = textDocument
@@ -368,16 +370,17 @@ end
 
 function LSPClient:didChange(buf)
     local textDocument = self:textDocumentIdentifier(buf)
+    local filePath = buf.AbsPath
 
-    if self.openFiles[textDocument.uri] == nil then
+    if self.openFiles[filePath] == nil then
         log("ERROR: tried to emit didChange event for document that was not open")
         return
     end
 
     local bufText = util.String(buf:Bytes())
-    local newVersion = self.openFiles[textDocument.uri].version + 1
+    local newVersion = self.openFiles[filePath].version + 1
 
-    self.openFiles[textDocument.uri].version = newVersion
+    self.openFiles[filePath].version = newVersion
     textDocument.version = newVersion
 
     self:notification("textDocument/didChange", {
@@ -436,12 +439,11 @@ end
 -- USER TRIGGERED ACTIONS
 function hoverAction(bufpane)
     local buf = bufpane.Buf
-    local bufUri = string.format("file://%s", buf.AbsPath)
     local cursor = buf:GetActiveCursor()
 
     for clientId, client in pairs(activeConnections) do
         client:request("textDocument/hover", {
-            textDocument = { uri = bufUri },
+            textDocument = client:textDocumentIdentifier(buf),
             position = { line = cursor.Y, character = cursor.X }
         })
     end
@@ -449,11 +451,10 @@ end
 
 function formatAction(bufpane)
     local buf = bufpane.Buf
-    local bufUri = string.format("file://%s", buf.AbsPath)
 
     for clientId, client in pairs(activeConnections) do
         client:request("textDocument/formatting", {
-            textDocument = { uri = bufUri },
+            textDocument = client:textDocumentIdentifier(buf),
             options = {
                 -- most servers completely ignore these values but tabSize and
                 -- insertSpaces are required according to the specification
@@ -470,12 +471,11 @@ end
 
 function completionAction(bufpane)
     local buf = bufpane.Buf
-    local docUri = string.format("file://%s", buf.AbsPath)
     local cursor = buf:GetActiveCursor()
 
     for clientId, client in pairs(activeConnections) do
         client:request("textDocument/completion", {
-            textDocument = { uri = docUri },
+            textDocument = client:textDocumentIdentifier(buf),
             position = { line = cursor.Y, character = cursor.X }
         })
     end
@@ -512,12 +512,12 @@ function onBufferOpen(buf)
     if buf.Type.Kind ~= buffer.BTDefault then return end
     if buf:FileType() == "unknown" then return end
 
-    local docUri = string.format("file://%s", buf.AbsPath)
+    local filePath = buf.AbsPath
 
-    if docBuffers[docUri] == nil then
-        docBuffers[docUri] = {}
+    if docBuffers[filePath] == nil then
+        docBuffers[filePath] = {}
     end
-    table.insert(docBuffers[docUri], buf)
+    table.insert(docBuffers[filePath], buf)
 
     for clientId, client in pairs(activeConnections) do
         client:didOpen(buf)
@@ -528,21 +528,21 @@ function onQuit(bufpane)
     local closedBuf = bufpane.Buf
     if closedBuf.Type.Kind ~= buffer.BTDefault then return end
 
-    local docUri = string.format("file://%s", closedBuf.AbsPath)
-    if docBuffers[docUri] == nil then
+    local filePath = closedBuf.AbsPath
+    if docBuffers[filePath] == nil then
         return
-    elseif #docBuffers[docUri] > 1 then
+    elseif #docBuffers[filePath] > 1 then
         -- there are still other buffers with the same file open
         local remainingBuffers = {}
-        for _, buf in pairs(docBuffers[docUri]) do
+        for _, buf in pairs(docBuffers[filePath]) do
             if buf ~= closedBuf then
                 table.insert(remainingBuffers, buf)
             end
         end
-        docBuffers[docUri] = remainingBuffers
+        docBuffers[filePath] = remainingBuffers
     else
         -- this was the last buffer in which this particular file was open
-        docBuffers[docUri] = nil
+        docBuffers[filePath] = nil
 
         for clientId, client in pairs(activeConnections) do
             client:didClose(closedBuf)
@@ -659,6 +659,15 @@ function string.uriDecode(str)
         return string.char(tonumber(x, 16))
     end
     return str:gsub("%%(%x%x)", hexToChar)
+end
+
+function string.uriEncode(str)
+    local function charToHex(c)
+        return string.format("%%%02X", string.byte(c))
+    end
+    str = str:gsub("([^%w/ _%-.~])", charToHex)
+    str = str:gsub(" ", "+")
+    return str
 end
 
 
