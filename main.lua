@@ -405,6 +405,9 @@ end
 
 function LSPClient:onStdout(text)
 
+    -- TODO: figure out if this is a performance bottleneck when receiving long
+    -- messages (tens of thousands of bytes) – I suspect Go's buffers would be
+    -- much faster than Lua string concatenation
     self.buffer = self.buffer .. text
 
     while true do
@@ -687,6 +690,9 @@ function editBuf(buf, textedits)
         local b = texteditB.range.start
         return a.line < b.line or (a.line == b.line and a.character < b.character)
     end
+    -- FIXME: table.sort is not guaranteed to be stable, and the LSP specification
+    -- says that if two edits share the same start position the order in the array
+    -- should dictate the order, so this is probably bugged in rare edge cases...
     table.sort(textedits, sortByRangeStart)
 
     local cursor = buf:GetActiveCursor()
