@@ -77,6 +77,3 @@ for all possible options.
   `pyright-langserver --stdio` and `ruff-lsp` and then ask for hover information
   you may get the result from either one (depending on which one is slower to
   respond) even though only Pyright responded with something useful.
-- Formatting large and messy files (minified JSON) with `deno lsp` causes the
-  editor to hang because it tries to do millions of tiny edits instead of doing
-  the entire file at once.

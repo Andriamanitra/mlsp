@@ -6,6 +6,7 @@ local shell = import("micro/shell")
 local buffer = import("micro/buffer")
 local util = import("micro/util")
 local go_os = import("os")
+local go_strings = import("strings")
 
 -- not sure if this is the best way to import code from plugin directory...
 config.AddRuntimeFile("mlsp", config.RTPlugin, "json.lua")
@@ -678,37 +679,54 @@ function table.empty(x)
     return type(x) == "table" and next(x) == nil
 end
 
-function editBuf(buf, textedits)
-    -- FIXME: current implementation has quadratic complexity because inserting
-    -- into the buffer means everything after the insertion needs to be shifted
-    -- forward instead we should iterate through the buffer and insertions
-    -- simultaneously and always insert at the end, and probably also only update
-    -- the real buffer once at the end
-    -- this slowness causes micro to hang when there are lots of textedits (for
-    -- example when formatting minified code)
 
-    -- sort edits so the last edit (from the end of the file) happens first
-    -- in order to not mess up line numbers for other edits
+function editBuf(buf, textedits)
+    -- sort edits by start position (earliest first)
     function sortByRangeStart(texteditA, texteditB)
         local a = texteditA.range.start
         local b = texteditB.range.start
-        return b.line < a.line or (a.line == b.line and b.character < a.character)
+        return a.line < b.line or (a.line == b.line and a.character < b.character)
     end
     table.sort(textedits, sortByRangeStart)
 
-    for _, textedit in pairs(textedits) do
-        local startPos = buffer.Loc(
-            textedit.range["start"].character,
-            textedit.range["start"].line
-        )
-        local endPos = buffer.Loc(
-            textedit.range["end"].character,
-            textedit.range["end"].line
-        )
+    local cursor = buf:GetActiveCursor()
 
-        buf:Remove(startPos, endPos)
-        buf:Insert(startPos, textedit.newText)
+    -- maybe there is a nice way to keep multicursors and selections? for now let's
+    -- just get rid of them before editing the buffer to avoid weird behavior
+    buf:ClearCursors()
+    cursor:Deselect(true)
+
+    -- using byte offset seems to be the easiest & most reliable way to keep cursor
+    -- position even when lines get added/removed
+    local cursorLoc = buffer.Loc(cursor.Loc.X, cursor.Loc.Y)
+    local cursorByteOffset = buffer.ByteOffset(cursorLoc, buf)
+
+    local editedBufParts = {}
+
+    local prevEnd = buf:Start()
+
+    for _, textedit in pairs(textedits) do
+        local startLoc = buffer.Loc(textedit.range["start"].character, textedit.range["start"].line)
+        local endLoc = buffer.Loc(textedit.range["end"].character, textedit.range["end"].line)
+        table.insert(editedBufParts, util.String(buf:Substr(prevEnd, startLoc)))
+        table.insert(editedBufParts, textedit.newText)
+        prevEnd = endLoc
+
+        -- if the cursor is in the middle of a textedit this can move it a bit but it's fiiiine
+        -- (I don't think there's a clean way to figure out the right place for it)
+        if startLoc:LessThan(cursorLoc) then
+            local oldTextLength = buffer.ByteOffset(endLoc, buf) - buffer.ByteOffset(startLoc, buf)
+            cursorByteOffset = cursorByteOffset - oldTextLength + textedit.newText:len()
+        end
     end
+
+    table.insert(editedBufParts, util.String(buf:Substr(prevEnd, buf:End())))
+
+    buf:Remove(buf:Start(), buf:End())
+    buf:Insert(buf:End(), go_strings.Join(editedBufParts, ""))
+
+    local newCursorLoc = buffer.Loc(0, 0):Move(cursorByteOffset, buf)
+    buf:GetActiveCursor():GotoLoc(newCursorLoc)
 
     for clientId, client in pairs(activeConnections) do
         client:didChange(buf)
