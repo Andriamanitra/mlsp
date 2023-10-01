@@ -667,6 +667,14 @@ function table.empty(x)
 end
 
 function editBuf(buf, textedits)
+    -- FIXME: current implementation has quadratic complexity because inserting
+    -- into the buffer means everything after the insertion needs to be shifted
+    -- forward instead we should iterate through the buffer and insertions
+    -- simultaneously and always insert at the end, and probably also only update
+    -- the real buffer once at the end
+    -- this slowness causes micro to hang when there are lots of textedits (for
+    -- example when formatting minified code)
+
     -- sort edits so the last edit (from the end of the file) happens first
     -- in order to not mess up line numbers for other edits
     function sortByRangeStart(texteditA, texteditB)
