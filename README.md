@@ -1,11 +1,8 @@
 # µlsp
 
-LSP client for [micro-editor](https://github.com/zyedidia/micro). Note that this
-is work in progress and currently **extremely buggy**, even the basic features
-don't work properly yet. Use at your own risk.
-
-[AndCake/micro-plugin-lsp](https://github.com/AndCake/micro-plugin-lsp) is a
-slightly more complete LSP client for micro.
+LSP client for [micro-editor](https://github.com/zyedidia/micro).
+Note that this is a work in progress and has not yet been tested extensively – expect there to be some bugs.
+Please [open an issue](https://github.com/Andriamanitra/mlsp/issues/new) if you run into any!
 
 ## Demo
 
@@ -47,7 +44,8 @@ something like this to your `bindings.json`:
 {
   "F7": "command:lsp",
   "F8": "command:format",
-  "Ctrl-j": "command:hover"
+  "Alt-h": "command:hover",
+  "Alt-d": "command:goto-definition"
 }
 ```
 
@@ -63,7 +61,7 @@ something like this to your `bindings.json`:
 - [x] go to implementation
 - [x] go to type definition
 - [ ] find references
-- [ ] everything else
+- [ ] [suggest a feature](https://github.com/Andriamanitra/mlsp/issues/new)
 
 ## Showing LSP information on statusline
 
@@ -78,7 +76,7 @@ Here is an example configuration (`~/.config/micro/settings.json`) that uses it:
 
 See [micro documentation](https://github.com/zyedidia/micro/blob/master/runtime/help/options.md)
 and the built-in [status plugin](https://github.com/zyedidia/micro/blob/master/runtime/plugins/status/help/status.md)
-for all possible options.
+for more information on customizing the statusline.
 
 ## Known issues
 
@@ -88,3 +86,7 @@ for all possible options.
   preference, because only the first one that can handle the request type will
   be used. For example if you start `pylsp` before `ruff-lsp` you will get better
   hover information.
+
+## Other similar projects
+
+* [AndCake/micro-plugin-lsp](https://github.com/AndCake/micro-plugin-lsp) is another LSP plugin for micro-editor.
