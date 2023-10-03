@@ -253,6 +253,14 @@ function LSPClient:handleResponseResult(method, result)
             editBuf(micro.CurPane().Buf, textedits)
             infobar("formatted file")
         end
+    elseif method == "textDocument/rangeFormatting" then
+        if result == nil or next(result) == nil then
+            infobar("formatted selection (no changes)")
+        else
+            local textedits = result
+            editBuf(micro.CurPane().Buf, textedits)
+            infobar("formatted selection")
+        end
     elseif method == "textDocument/completion" then
         -- TODO: handle result.isIncomplete = true somehow
         local completions = {}
@@ -458,21 +466,48 @@ end
 
 function formatAction(bufpane)
     local buf = bufpane.Buf
+    local selectedRanges = {}
 
-    for clientId, client in pairs(activeConnections) do
-        client:request("textDocument/formatting", {
-            textDocument = client:textDocumentIdentifier(buf),
-            options = {
-                -- most servers completely ignore these values but tabSize and
-                -- insertSpaces are required according to the specification
-                -- https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#formattingOptions
-                tabSize = buf.Settings["tabsize"],
-                insertSpaces = buf.Settings["tabstospaces"],
-                trimTrailingWhitespace = true,
-                insertFinalNewline = true,
-                trimFinalNewlines = true
-            }
-        })
+    for i = 1, #buf:GetCursors() do
+        local cursor = buf:GetCursor(i - 1)
+        if cursor:HasSelection() then
+            table.insert(selectedRanges, LspRange.fromSelection(cursor.CurSelection))
+        end
+    end
+
+    if #selectedRanges > 1 then
+        infobar("formatting multiple selections is not supported yet")
+        return
+    end
+
+    local formatOptions = {
+        -- most servers completely ignore these values but tabSize and
+        -- insertSpaces are required according to the specification
+        -- https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#formattingOptions
+        tabSize = buf.Settings["tabsize"],
+        insertSpaces = buf.Settings["tabstospaces"],
+        trimTrailingWhitespace = true,
+        insertFinalNewline = true,
+        trimFinalNewlines = true
+    }
+
+    if #selectedRanges == 0 then
+        local client = findClientWithCapability("documentFormattingProvider", "formatting")
+        if client ~= nil then
+            client:request("textDocument/formatting", {
+                textDocument = client:textDocumentIdentifier(buf),
+                options = formatOptions
+            })
+        end
+    else
+        local client = findClientWithCapability("documentRangeFormattingProvider", "formatting selections")
+        if client ~= nil then
+            client:request("textDocument/rangeFormatting", {
+                textDocument = client:textDocumentIdentifier(buf),
+                range = selectedRanges[1],
+                options = formatOptions
+            })
+        end
     end
 end
 
@@ -791,6 +826,23 @@ function showDiagnostics(buf, owner, diagnostics)
     end
 end
 
+LspRange = {
+    fromSelection = function(selection)
+        -- create Range https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#range
+        -- from [2]Loc https://pkg.go.dev/github.com/zyedidia/micro/v2@v2.0.12/internal/buffer#Cursor
+        return {
+            ["start"] = {
+                line = selection[1].Y,
+                character = selection[1].X
+            },
+            ["end"] = {
+                line = selection[2].Y,
+                character = selection[2].X
+            }
+        }    
+    end
+}
+
 function clearAutocomplete()
     lastAutocompletion = -1
 end
@@ -807,4 +859,17 @@ function setCompletions(completions)
     else
         buf:CycleAutocomplete(true)
     end
+end
+
+function findClientWithCapability(capabilityName, featureDescription)
+    for clientId, client in pairs(activeConnections) do
+        -- some language servers (gopls) don't say their capabilities so
+        -- client.capabilities[cap] can be nil even when a feature is supported,
+        -- but if it's false then the feature is definitely not supported
+        if client.capabilities[cap] ~= false then
+            return client
+        end
+    end
+    infobar(string.format("None of the active language server(s) support %s", featureDescription))
+    return nil
 end

@@ -53,7 +53,10 @@ something like this to your `bindings.json`:
 - [x] show diagnostics (disabled by default, edit `settings.lua` to enable)
 - [x] autocomplete using tab (disabled by default, edit `settings.lua` to enable)
 - [x] format document
-- [ ] format selection
+- [x] format selection
+- [ ] go to declaration
+- [ ] go to definition
+- [ ] find references
 - [ ] everything else
 
 ## Showing LSP information on statusline
