@@ -63,20 +63,22 @@ something like this to your `bindings.json`:
 
 The plugin provides a function `mlsp.status` that can be used in the status line format.
 Here is an example configuration (`~/.config/micro/settings.json`) that uses it:
+
 ```json
 {
-    "statusformatl": "$(filename) $(modified)($(line),$(col)) | ft:$(opt:filetype) | µlsp:$(mlsp.status)",
+    "statusformatl": "$(filename) $(modified)($(line),$(col)) | ft:$(opt:filetype) | µlsp:$(mlsp.status)"
 }
 ```
+
 See [micro documentation](https://github.com/zyedidia/micro/blob/master/runtime/help/options.md)
 and the built-in [status plugin](https://github.com/zyedidia/micro/blob/master/runtime/plugins/status/help/status.md)
 for all possible options.
 
-
 ## Known issues
 
 - When using multiple language servers at the same time there is no good way to
-  handle which one handles which request. So if you start both
-  `pyright-langserver --stdio` and `ruff-lsp` and then ask for hover information
-  you may get the result from either one (depending on which one is slower to
-  respond) even though only Pyright responded with something useful.
+  specify which server should handle which types of requests. Until this is
+  addressed you should make sure to start the language servers in order of
+  preference, because only the first one that can handle the request type will
+  be used. For example if you start `pylsp` before `ruff-lsp` you will get better
+  hover information.
