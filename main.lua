@@ -325,6 +325,8 @@ function LSPClient:handleNotification(notification)
         if notification.params.type < 3 then
             infobar(notification.params.message)
         end
+    elseif notification.method == "window/logMessage" then
+        -- TODO: somehow include these messages in `lsp-showlog`
     else
         log("WARNING: don't know what to do with that message")
     end
@@ -458,7 +460,8 @@ function hoverAction(bufpane)
     local buf = bufpane.Buf
     local cursor = buf:GetActiveCursor()
 
-    for clientId, client in pairs(activeConnections) do
+    local client = findClientWithCapability("hoverProvider", "hover information")
+    if client ~= nil then
         client:request("textDocument/hover", {
             textDocument = client:textDocumentIdentifier(buf),
             position = { line = cursor.Y, character = cursor.X }
@@ -517,7 +520,8 @@ function completionAction(bufpane)
     local buf = bufpane.Buf
     local cursor = buf:GetActiveCursor()
 
-    for clientId, client in pairs(activeConnections) do
+    local client = findClientWithCapability("completionProvider")
+    if client ~= nil then
         client:request("textDocument/completion", {
             textDocument = client:textDocumentIdentifier(buf),
             position = { line = cursor.Y, character = cursor.X }
@@ -820,8 +824,13 @@ function showDiagnostics(buf, owner, diagnostics)
                 msgType = buffer.MTError
             end
 
-            local startLoc = buffer.Loc(diagnostic.range.start.character, diagnostic.range.start.line)
-            local endLoc = buffer.Loc(diagnostic.range["end"].character, diagnostic.range["end"].line)
+            local startLoc, endLoc = LspRange.toLocs(diagnostic.range)
+
+            -- prevent underlining empty space at the ends of lines
+            if endLoc.X > 0 and util.RuneStr(buf:RuneAt(endLoc)) == "\n" then
+                endLoc = endLoc:Move(-1, buf)
+            end
+
             local msg = string.format("[µlsp] %s%s", extraInfo or "", diagnostic.message)
             buf:AddMessage(buffer.NewMessage(owner, msg, startLoc, endLoc, msgType))
         end
@@ -842,6 +851,9 @@ LspRange = {
                 character = selection[2].X
             }
         }    
+    end,
+    toLocs = function(range)
+        return buffer.Loc(range["start"].character, range["start"].line), buffer.Loc(range["end"].character, range["end"].line)
     end
 }
 
