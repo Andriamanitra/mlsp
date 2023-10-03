@@ -322,7 +322,9 @@ function LSPClient:handleNotification(notification)
         end
     elseif notification.method == "window/showMessage" then
         -- notification.params.type can be 1 = error, 2 = warning, 3 = info, 4 = log, 5 = debug
-        infobar(notification.params.message)
+        if notification.params.type < 3 then
+            infobar(notification.params.message)
+        end
     else
         log("WARNING: don't know what to do with that message")
     end
