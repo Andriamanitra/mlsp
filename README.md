@@ -22,7 +22,7 @@ git clone https://github.com/Andriamanitra/mlsp ~/.config/micro/plug/mlsp
 You will also need to install [language servers](LanguageServers.md) for the
 programming languages you want to use.
 
-The plugin currently provides five commands:
+The plugin currently provides following commands:
 
 - `lsp "deno lsp"` (the quotes are required when the command takes arguments)
   starts a language server by executing command `deno lsp`. Without arguments
@@ -35,6 +35,10 @@ The plugin currently provides five commands:
 - `autocomplete` for code completion suggestions. PROTIP: If you wish to use the
   same key as micro's autocompletion (tab by default), enable `tabAutocomplete`
   in `settings.lua` instead of binding `command:autocomplete` to a key!
+- `goto-definition` – open the definition for the symbol under cursor
+- `goto-declaration` – open the declaration for the symbol under cursor
+- `goto-typedefinition` – open the type definition for the symbol under cursor
+- `goto-implementation` – open the implementation for the symbol under cursor
 
 You can type the commands on micro command prompt or bind them to keys by adding
 something like this to your `bindings.json`:
@@ -54,8 +58,10 @@ something like this to your `bindings.json`:
 - [x] autocomplete using tab (disabled by default, edit `settings.lua` to enable)
 - [x] format document
 - [x] format selection
-- [ ] go to declaration
-- [ ] go to definition
+- [x] go to definition
+- [x] go to declaration
+- [x] go to implementation
+- [x] go to type definition
 - [ ] find references
 - [ ] everything else
 

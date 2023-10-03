@@ -27,6 +27,10 @@ function init()
     config.MakeCommand("hover", hoverAction, config.NoComplete)
     config.MakeCommand("format", formatAction, config.NoComplete)
     config.MakeCommand("autocomplete", completionAction, config.NoComplete)
+    config.MakeCommand("goto-definition", gotoDefinitionAction, config.NoComplete)
+    config.MakeCommand("goto-declaration", gotoDeclarationAction, config.NoComplete)
+    config.MakeCommand("goto-typedefinition", gotoTypeDefinitionAction, config.NoComplete)
+    config.MakeCommand("goto-implementation", gotoImplementationAction, config.NoComplete)
 end
 
 function status(buf)
@@ -294,6 +298,32 @@ function LSPClient:handleResponseResult(method, result)
         cursor:DeleteSelection()
 
         setCompletions(rawcompletions)
+    elseif (
+        method == "textDocument/declaration" or
+        method == "textDocument/definition" or
+        method == "textDocument/typeDefinition" or
+        method == "textDocument/implementation"
+    ) then
+        -- result: Location | Location[] | LocationLink[] | null
+        if result == nil or table.empty(result) then
+            infobar(string.format("%s not found", method:match("textDocument/(.*)$")))
+        else
+            -- FIXME: handle list of results properly
+            -- if result is a list just take the first one
+            if result[1] then result = result[1] end
+
+            -- FIXME: support LocationLink[]
+            if result.targetRange ~= nil then
+                infobar("LocationLinks are not supported yet")
+                return
+            end
+
+            -- now result should be Location
+            local filepath = absPathFromFileUri(result.uri)
+            local startLoc, endLoc = LspRange.toLocs(result.range)
+
+            openFileAtLoc(filepath, startLoc)
+        end
     else
         log("WARNING: dunno what to do with response to", method)
     end
@@ -301,7 +331,7 @@ end
 
 function LSPClient:handleNotification(notification)
     if notification.method == "textDocument/publishDiagnostics" then
-        local filePath = notification.params.uri:match("file://(.*)$"):uriDecode()
+        local filePath = absPathFromFileUri(notification.params.uri)
 
         if self.openFiles[filePath] == nil then
             log("DEBUG: received diagnostics for document that is not open:", filePath)
@@ -457,11 +487,10 @@ end
 
 -- USER TRIGGERED ACTIONS
 function hoverAction(bufpane)
-    local buf = bufpane.Buf
-    local cursor = buf:GetActiveCursor()
-
     local client = findClientWithCapability("hoverProvider", "hover information")
     if client ~= nil then
+        local buf = bufpane.Buf
+        local cursor = buf:GetActiveCursor()
         client:request("textDocument/hover", {
             textDocument = client:textDocumentIdentifier(buf),
             position = { line = cursor.Y, character = cursor.X }
@@ -517,11 +546,10 @@ function formatAction(bufpane)
 end
 
 function completionAction(bufpane)
-    local buf = bufpane.Buf
-    local cursor = buf:GetActiveCursor()
-
-    local client = findClientWithCapability("completionProvider")
+    local client = findClientWithCapability("completionProvider", "completion")
     if client ~= nil then
+        local buf = bufpane.Buf
+        local cursor = buf:GetActiveCursor()
         client:request("textDocument/completion", {
             textDocument = client:textDocumentIdentifier(buf),
             position = { line = cursor.Y, character = cursor.X }
@@ -529,6 +557,27 @@ function completionAction(bufpane)
     end
 end
 
+function gotoAction(kind)
+    local cap = string.format("%sProvider", kind)
+    local requestMethod = string.format("textDocument/%s", kind)
+
+    return function(bufpane)
+        local client = findClientWithCapability(cap, requestMethod)
+        if client ~= nil then
+            local buf = bufpane.Buf
+            local cursor = buf:GetActiveCursor()
+            client:request(requestMethod, {
+                textDocument = client:textDocumentIdentifier(buf),
+                position = { line = cursor.Y, character = cursor.X }
+            })
+        end
+    end
+end
+
+gotoDeclarationAction    = gotoAction("declaration")
+gotoDefinitionAction     = gotoAction("definition")
+gotoTypeDefinitionAction = gotoAction("typeDefinition")
+gotoImplementationAction = gotoAction("implementation")
 
 
 -- EVENTS (LUA CALLBACKS)
@@ -563,9 +612,8 @@ function onBufferOpen(buf)
     local filePath = buf.AbsPath
 
     if docBuffers[filePath] == nil then
-        docBuffers[filePath] = {}
+        docBuffers[filePath] = { buf }
     end
-    table.insert(docBuffers[filePath], buf)
 
     for clientId, client in pairs(activeConnections) do
         client:didOpen(buf)
@@ -876,14 +924,40 @@ function setCompletions(completions)
 end
 
 function findClientWithCapability(capabilityName, featureDescription)
+    if next(activeConnections) == nil then
+        infobar("No language server is running! Try starting one with the `lsp` command.")
+        return
+    end
+
     for clientId, client in pairs(activeConnections) do
-        -- some language servers (gopls) don't say their capabilities so
-        -- client.capabilities[cap] can be nil even when a feature is supported,
-        -- but if it's false then the feature is definitely not supported
-        if client.capabilities[cap] ~= false then
+        if client.capabilities[capabilityName] then
             return client
         end
     end
     infobar(string.format("None of the active language server(s) support %s", featureDescription))
     return nil
+end
+
+function absPathFromFileUri(uri)
+    return uri:match("file://(.*)$"):uriDecode()
+end
+
+function openFileAtLoc(filepath, loc)
+    if docBuffers[filepath] == nil then
+        local newBuf, err = buffer.NewBufferFromFile(filepath)
+        if err ~= nil then
+            infobar(err)
+            return
+        end
+        micro.CurPane():AddTab()
+        micro.CurPane():OpenBuffer(newBuf)
+    else
+        local openBuf = docBuffers[filepath][1]
+    end
+
+    local bp = micro.CurPane()
+    local cursor = bp.Buf:GetActiveCursor()
+    cursor:Deselect(false)
+    cursor:GotoLoc(loc)
+    bp:Center()
 end
