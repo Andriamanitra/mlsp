@@ -31,6 +31,7 @@ function init()
     config.MakeCommand("goto-declaration", gotoDeclarationAction, config.NoComplete)
     config.MakeCommand("goto-typedefinition", gotoTypeDefinitionAction, config.NoComplete)
     config.MakeCommand("goto-implementation", gotoImplementationAction, config.NoComplete)
+    config.MakeCommand("find-references", findReferencesAction, config.NoComplete)
 end
 
 function status(buf)
@@ -298,6 +299,12 @@ function LSPClient:handleResponseResult(method, result)
         cursor:DeleteSelection()
 
         setCompletions(rawcompletions)
+    elseif method == "textDocument/references" then
+        if result == nil or table.empty(result) then
+            infobar("No references found")
+            return
+        end
+        showLocations("references", result)
     elseif (
         method == "textDocument/declaration" or
         method == "textDocument/definition" or
@@ -579,6 +586,20 @@ gotoDefinitionAction     = gotoAction("definition")
 gotoTypeDefinitionAction = gotoAction("typeDefinition")
 gotoImplementationAction = gotoAction("implementation")
 
+function findReferencesAction(bufpane)
+    local client = findClientWithCapability("referencesProvider", "finding references")
+    if client ~= nil then
+        local buf = bufpane.Buf
+        local cursor = buf:GetActiveCursor()
+        client:request("textDocument/references", {
+            textDocument = client:textDocumentIdentifier(buf),
+            position = { line = cursor.Y, character = cursor.X },
+            context = { includeDeclaration = true }
+        })
+    end
+end
+
+
 
 -- EVENTS (LUA CALLBACKS)
 -- https://github.com/zyedidia/micro/blob/master/runtime/help/plugins.md#lua-callbacks
@@ -689,14 +710,13 @@ end
 
 -- FIXME: figure out how to disable all this garbage when there are no active connections
 function onDocumentEdit(bufpane)
-    local buf = bufpane.Buf
     -- filetype is "unknown" for the command prompt
-    if buf:FileType() == "unknown" then
+    if bufpane.Buf:FileType() == "unknown" then
         return
     end
 
     for clientId, client in pairs(activeConnections) do
-        client:didChange(buf)
+        client:didChange(bufpane.Buf)
     end
 end
 
@@ -960,4 +980,22 @@ function openFileAtLoc(filepath, loc)
     cursor:Deselect(false)
     cursor:GotoLoc(loc)
     bp:Center()
+end
+
+-- takes Location[] https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#location
+-- and renders them to user
+function showLocations(newBufferTitle, lspLocations)
+    local bufContents = ""
+    for i, lspLoc in pairs(lspLocations) do
+        local fpath = absPathFromFileUri(lspLoc.uri)
+        local lineNumber = lspLoc.range.start.line + 1
+        local columnNumber = lspLoc.range.start.character + 1
+        local line = string.format("%s:%d:%d\n", fpath, lineNumber, columnNumber)
+        bufContents = bufContents .. line
+    end
+
+    local newBuffer = buffer.NewBuffer(bufContents, newBufferTitle)
+    newBuffer.Type.Scratch = true
+    newBuffer.Type.Readonly = true
+    micro.CurPane():HSplitBuf(newBuffer)
 end
