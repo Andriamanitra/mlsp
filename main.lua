@@ -963,22 +963,31 @@ function absPathFromFileUri(uri)
 end
 
 function openFileAtLoc(filepath, loc)
-    if docBuffers[filepath] == nil then
+    local bp = micro.CurPane()
+
+    -- don't open a new tab if file is already open
+    local alreadyOpenPane, tabIdx, paneIdx = findBufPaneByPath(filepath)
+
+    if alreadyOpenPane then
+        micro.Tabs():SetActive(tabIdx)
+        alreadyOpenPane:tab():SetActive(paneIdx)
+        bp = alreadyOpenPane
+    else
         local newBuf, err = buffer.NewBufferFromFile(filepath)
         if err ~= nil then
             infobar(err)
             return
         end
-        micro.CurPane():AddTab()
-        micro.CurPane():OpenBuffer(newBuf)
-    else
-        local openBuf = docBuffers[filepath][1]
+        bp:AddTab()
+        bp = micro.CurPane()
+        bp:OpenBuffer(newBuf)
     end
 
-    local bp = micro.CurPane()
+    bp.Buf:ClearCursors() -- remove multicursors
     local cursor = bp.Buf:GetActiveCursor()
-    cursor:Deselect(false)
+    cursor:Deselect(false) -- clear selection
     cursor:GotoLoc(loc)
+    bp.Buf:RelocateCursors() -- make sure cursor is inside the buffer
     bp:Center()
 end
 
@@ -998,4 +1007,26 @@ function showLocations(newBufferTitle, lspLocations)
     newBuffer.Type.Scratch = true
     newBuffer.Type.Readonly = true
     micro.CurPane():HSplitBuf(newBuffer)
+end
+
+function findBufPaneByPath(fpath)
+    if fpath == nil then return nil end
+    for tabIdx, tab in userdataIterator(micro.Tabs().List) do
+        for paneIdx, pane in userdataIterator(tab.Panes) do
+            -- pane.Buf is nil for panes that are not BufPanes (terminals etc)
+            if pane.Buf ~= nil and fpath == pane.Buf.AbsPath then
+                -- lua indexing starts from 1 but go is stupid and starts from 0 :/
+                return pane, tabIdx - 1, paneIdx - 1
+            end
+        end
+    end
+end
+
+function userdataIterator(data)
+    local idx = 0
+    return function ()
+        idx = idx + 1
+        local success, item = pcall(function() return data[idx] end)
+        if success then return idx, item end
+    end
 end
