@@ -36,6 +36,7 @@ The plugin currently provides following commands:
 - `goto-declaration` – open the declaration for the symbol under cursor
 - `goto-typedefinition` – open the type definition for the symbol under cursor
 - `goto-implementation` – open the implementation for the symbol under cursor
+- `find-references` - find all references to the symbol under cursor (shows the results in a new pane)
 
 You can type the commands on micro command prompt or bind them to keys by adding
 something like this to your `bindings.json`:
@@ -60,7 +61,10 @@ something like this to your `bindings.json`:
 - [x] go to declaration
 - [x] go to implementation
 - [x] go to type definition
-- [ ] find references
+- [x] find references
+- [ ] rename symbol
+- [ ] code actions
+- [ ] incremental document synchronization (better performance when editing large files)
 - [ ] [suggest a feature](https://github.com/Andriamanitra/mlsp/issues/new)
 
 ## Showing LSP information on statusline
