@@ -720,14 +720,14 @@ function onDocumentEdit(bufpane)
     end
 end
 
-function CursorUp(bufpane)       clearAutocomplete() end
-function CursorDown(bufpane)     clearAutocomplete() end
-function CursorPageUp(bufpane)   clearAutocomplete() end
-function CursorPageDown(bufpane) clearAutocomplete() end
-function CursorLeft(bufpane)     clearAutocomplete() end
-function CursorRight(bufpane)    clearAutocomplete() end
-function CursorStart(bufpane)    clearAutocomplete() end
-function CursorEnd(bufpane)      clearAutocomplete() end
+function onCursorUp(bufpane)       clearAutocomplete() end
+function onCursorDown(bufpane)     clearAutocomplete() end
+function onCursorPageUp(bufpane)   clearAutocomplete() end
+function onCursorPageDown(bufpane) clearAutocomplete() end
+function onCursorLeft(bufpane)     clearAutocomplete() end
+function onCursorRight(bufpane)    clearAutocomplete() end
+function onCursorStart(bufpane)    clearAutocomplete() end
+function onCursorEnd(bufpane)      clearAutocomplete() end
 
 function onRune(bp, rune)        onDocumentEdit(bp); clearAutocomplete() end
 function onMoveLinesUp(bp)       onDocumentEdit(bp); clearAutocomplete() end
