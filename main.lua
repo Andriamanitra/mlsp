@@ -917,8 +917,10 @@ function showDiagnostics(buf, owner, diagnostics)
             local startLoc, endLoc = LspRange.toLocs(diagnostic.range)
 
             -- prevent underlining empty space at the ends of lines
-            if endLoc.X > 0 and util.RuneStr(buf:RuneAt(endLoc)) == "\n" then
-                endLoc = endLoc:Move(-1, buf)
+            -- (fix pylsp being off-by-one with endLoc.X)
+            local endLineLength = #buf:Line(endLoc.Y)
+            if endLoc.X > endLineLength then
+                endLoc = buffer.Loc(endLineLength, endLoc.Y)
             end
 
             local msg = string.format("[µlsp] %s%s", extraInfo or "", diagnostic.message)
