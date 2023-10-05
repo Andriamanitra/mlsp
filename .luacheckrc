@@ -9,7 +9,7 @@ globals = {
     "init",
     "preinit",
     "postinit",
-    "onSetAtive",
+    "onSetActive",
     "onBufferOpen",
     "onBufPaneOpen",
 
