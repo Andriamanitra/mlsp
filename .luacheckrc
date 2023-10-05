@@ -12,6 +12,8 @@ globals = {
     "onSetActive",
     "onBufferOpen",
     "onBufPaneOpen",
+    "onRune",
+    "preRune",
 
     "onCursorUp",
     "onCursorDown",
