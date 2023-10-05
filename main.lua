@@ -8,17 +8,6 @@ local util = import("micro/util")
 local go_os = import("os")
 local go_strings = import("strings")
 
--- not sure if this is the best way to import code from plugin directory...
-config.AddRuntimeFile("mlsp", config.RTPlugin, "json.lua")
-local json = loadstring(config.ReadRuntimeFile(config.RTPlugin, "json"))()
-
-config.AddRuntimeFile("mlsp", config.RTPlugin, "settings.lua")
-local settings = loadstring(config.ReadRuntimeFile(config.RTPlugin, "settings"))()
-
-local activeConnections = {}
-local docBuffers = {}
-local lastAutocompletion = -1
-
 function init()
     micro.SetStatusInfoFn("mlsp.status")
     config.MakeCommand("lsp", startServer, config.NoComplete)
@@ -33,6 +22,40 @@ function init()
     config.MakeCommand("goto-implementation", gotoImplementationAction, config.NoComplete)
     config.MakeCommand("find-references", findReferencesAction, config.NoComplete)
 end
+
+-- not sure if this is the best way to import code from plugin directory...
+config.AddRuntimeFile("mlsp", config.RTPlugin, "json.lua")
+local json = loadstring(config.ReadRuntimeFile(config.RTPlugin, "json"))()
+
+config.AddRuntimeFile("mlsp", config.RTPlugin, "settings.lua")
+local settings = loadstring(config.ReadRuntimeFile(config.RTPlugin, "settings"))()
+
+local activeConnections = {}
+local docBuffers = {}
+local lastAutocompletion = -1
+
+local LSPClient = {}
+LSPClient.__index = LSPClient
+
+local LspRange = {
+    fromSelection = function(selection)
+        -- create Range https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#range
+        -- from [2]Loc https://pkg.go.dev/github.com/zyedidia/micro/v2@v2.0.12/internal/buffer#Cursor
+        return {
+            ["start"] = {
+                line = selection[1].Y,
+                character = selection[1].X
+            },
+            ["end"] = {
+                line = selection[2].Y,
+                character = selection[2].X
+            }
+        }
+    end,
+    toLocs = function(range)
+        return buffer.Loc(range["start"].character, range["start"].line), buffer.Loc(range["end"].character, range["end"].line)
+    end
+}
 
 function status(buf)
     local servers = {}
@@ -117,9 +140,6 @@ function showLog(bufpane, args)
 
     micro.CurPane():HSplitBuf(newBuffer)
 end
-
-LSPClient = {}
-LSPClient.__index = LSPClient
 
 function LSPClient:initialize(lspServerCommand)
     local args = lspServerCommand:split()
@@ -906,26 +926,6 @@ function showDiagnostics(buf, owner, diagnostics)
         end
     end
 end
-
-LspRange = {
-    fromSelection = function(selection)
-        -- create Range https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#range
-        -- from [2]Loc https://pkg.go.dev/github.com/zyedidia/micro/v2@v2.0.12/internal/buffer#Cursor
-        return {
-            ["start"] = {
-                line = selection[1].Y,
-                character = selection[1].X
-            },
-            ["end"] = {
-                line = selection[2].Y,
-                character = selection[2].X
-            }
-        }    
-    end,
-    toLocs = function(range)
-        return buffer.Loc(range["start"].character, range["start"].line), buffer.Loc(range["end"].character, range["end"].line)
-    end
-}
 
 function clearAutocomplete()
     lastAutocompletion = -1
