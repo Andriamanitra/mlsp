@@ -37,23 +37,18 @@ local lastAutocompletion = -1
 local LSPClient = {}
 LSPClient.__index = LSPClient
 
-local LspRange = {
+local LSPRange = {
     fromSelection = function(selection)
         -- create Range https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#range
         -- from [2]Loc https://pkg.go.dev/github.com/zyedidia/micro/v2@v2.0.12/internal/buffer#Cursor
         return {
-            ["start"] = {
-                line = selection[1].Y,
-                character = selection[1].X
-            },
-            ["end"] = {
-                line = selection[2].Y,
-                character = selection[2].X
-            }
+            ["start"] = { line = selection[1].Y, character = selection[1].X },
+            ["end"]   = { line = selection[2].Y, character = selection[2].X }
         }
     end,
     toLocs = function(range)
-        return buffer.Loc(range["start"].character, range["start"].line), buffer.Loc(range["end"].character, range["end"].line)
+        local a, b = range["start"], range["end"]
+        return buffer.Loc(a.character, a.line), buffer.Loc(b.character, b.line)
     end
 }
 
@@ -347,7 +342,7 @@ function LSPClient:handleResponseResult(method, result)
 
             -- now result should be Location
             local filepath = absPathFromFileUri(result.uri)
-            local startLoc, _ = LspRange.toLocs(result.range)
+            local startLoc, _ = LSPRange.toLocs(result.range)
 
             openFileAtLoc(filepath, startLoc)
         end
@@ -532,7 +527,7 @@ function formatAction(bufpane)
     for i = 1, #buf:GetCursors() do
         local cursor = buf:GetCursor(i - 1)
         if cursor:HasSelection() then
-            table.insert(selectedRanges, LspRange.fromSelection(cursor.CurSelection))
+            table.insert(selectedRanges, LSPRange.fromSelection(cursor.CurSelection))
         end
     end
 
@@ -843,8 +838,7 @@ function editBuf(buf, textedits)
     local prevEnd = buf:Start()
 
     for _, textedit in pairs(textedits) do
-        local startLoc = buffer.Loc(textedit.range["start"].character, textedit.range["start"].line)
-        local endLoc = buffer.Loc(textedit.range["end"].character, textedit.range["end"].line)
+        local startLoc, endLoc = LSPRange.toLocs(textedit.range)
         table.insert(editedBufParts, util.String(buf:Substr(prevEnd, startLoc)))
         table.insert(editedBufParts, textedit.newText)
         prevEnd = endLoc
@@ -914,7 +908,7 @@ function showDiagnostics(buf, owner, diagnostics)
                 msgType = buffer.MTError
             end
 
-            local startLoc, endLoc = LspRange.toLocs(diagnostic.range)
+            local startLoc, endLoc = LSPRange.toLocs(diagnostic.range)
 
             -- prevent underlining empty space at the ends of lines
             -- (fix pylsp being off-by-one with endLoc.X)
