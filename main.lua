@@ -36,7 +36,7 @@ end
 
 function status(buf)
     local servers = {}
-    for clientId, client in pairs(activeConnections) do
+    for _, client in pairs(activeConnections) do
         local name = client.name or client.command:match("%S+")
         table.insert(servers, name)
     end
@@ -81,7 +81,7 @@ function stopServers(bufpane, args)
             table.insert(stoppedClients, clientId)
         end
     end
-    for idx, clientId in pairs(stoppedClients) do
+    for _, clientId in ipairs(stoppedClients) do
         activeConnections[clientId] = nil
     end
 end
@@ -90,7 +90,7 @@ function showLog(bufpane, args)
     local hasArgs, lspServerCommand = pcall(function() return args[1] end)
 
     local foundClient
-    for clientId, client in pairs(activeConnections) do
+    for _, client in pairs(activeConnections) do
         if not hasArgs or client.command:startsWith(lspServerCommand) then
             foundClient = client
             break
@@ -123,7 +123,7 @@ LSPClient.__index = LSPClient
 
 function LSPClient:initialize(lspServerCommand)
     local args = lspServerCommand:split()
-    runCommand = table.remove(args, 1)
+    local runCommand = table.remove(args, 1)
 
     local client = {}
     setmetatable(client, LSPClient)
@@ -158,7 +158,7 @@ function LSPClient:initialize(lspServerCommand)
         rootUri = rootUri,
         workspaceFolders = { { name = "root", uri = rootUri } },
         capabilities = {
-            textDocument = { 
+            textDocument = {
                 hover = { contentFormat = {"plaintext", "markdown"} },
                 formatting = { dynamicRegistration = false }
             }
@@ -168,8 +168,8 @@ function LSPClient:initialize(lspServerCommand)
 end
 
 function LSPClient:stop()
-    for filePath, _file in pairs(self.openFiles) do
-        for _idx, docBuf in pairs(docBuffers[filePath]) do
+    for filePath, _ in pairs(self.openFiles) do
+        for _, docBuf in ipairs(docBuffers[filePath]) do
             docBuf:ClearMessages(self.clientId)
         end
     end
@@ -283,8 +283,8 @@ function LSPClient:handleResponseResult(method, result)
         end
 
         local rawcompletions = {}
-        for k, v in pairs(completions) do
-            table.insert(rawcompletions, v.insertText or v.label)
+        for _, completionItem in pairs(completions) do
+            table.insert(rawcompletions, completionItem.insertText or completionItem.label)
         end
 
         local cursor = micro.CurPane().Buf:GetActiveCursor()
@@ -327,7 +327,7 @@ function LSPClient:handleResponseResult(method, result)
 
             -- now result should be Location
             local filepath = absPathFromFileUri(result.uri)
-            local startLoc, endLoc = LspRange.toLocs(result.range)
+            local startLoc, _ = LspRange.toLocs(result.range)
 
             openFileAtLoc(filepath, startLoc)
         end
@@ -354,7 +354,7 @@ function LSPClient:handleNotification(notification)
         -- in the usual case there is only one buffer with the same document so a loop
         -- would not be necessary, but there may sometimes be multiple buffers with the
         -- same exact document open!
-        for filePath, buf in pairs(docBuffers[filePath]) do
+        for _, buf in ipairs(docBuffers[filePath]) do
             showDiagnostics(buf, self.clientId, notification.params.diagnostics)
         end
     elseif notification.method == "window/showMessage" then
@@ -634,9 +634,11 @@ function onBufferOpen(buf)
 
     if docBuffers[filePath] == nil then
         docBuffers[filePath] = { buf }
+    else
+        table.insert(docBuffers[filePath], buf)
     end
 
-    for clientId, client in pairs(activeConnections) do
+    for _, client in pairs(activeConnections) do
         client:didOpen(buf)
     end
 end
@@ -651,7 +653,7 @@ function onQuit(bufpane)
     elseif #docBuffers[filePath] > 1 then
         -- there are still other buffers with the same file open
         local remainingBuffers = {}
-        for _, buf in pairs(docBuffers[filePath]) do
+        for _, buf in ipairs(docBuffers[filePath]) do
             if buf ~= closedBuf then
                 table.insert(remainingBuffers, buf)
             end
@@ -661,7 +663,7 @@ function onQuit(bufpane)
         -- this was the last buffer in which this particular file was open
         docBuffers[filePath] = nil
 
-        for clientId, client in pairs(activeConnections) do
+        for _, client in pairs(activeConnections) do
             client:didClose(closedBuf)
         end
     end
@@ -669,7 +671,7 @@ function onQuit(bufpane)
 end
 
 function onSave(bufpane)
-    for clientId, client in pairs(activeConnections) do
+    for _, client in pairs(activeConnections) do
         client:didSave(bufpane.Buf)
     end
 end
@@ -715,7 +717,7 @@ function onDocumentEdit(bufpane)
         return
     end
 
-    for clientId, client in pairs(activeConnections) do
+    for _, client in pairs(activeConnections) do
         client:didChange(bufpane.Buf)
     end
 end
@@ -794,7 +796,7 @@ end
 
 function editBuf(buf, textedits)
     -- sort edits by start position (earliest first)
-    function sortByRangeStart(texteditA, texteditB)
+    local function sortByRangeStart(texteditA, texteditB)
         local a = texteditA.range.start
         local b = texteditB.range.start
         return a.line < b.line or (a.line == b.line and a.character < b.character)
@@ -843,7 +845,7 @@ function editBuf(buf, textedits)
     local newCursorLoc = buffer.Loc(0, 0):Move(cursorByteOffset, buf)
     buf:GetActiveCursor():GotoLoc(newCursorLoc)
 
-    for clientId, client in pairs(activeConnections) do
+    for _, client in pairs(activeConnections) do
         client:didChange(buf)
     end
 end
@@ -949,7 +951,7 @@ function findClientWithCapability(capabilityName, featureDescription)
         return
     end
 
-    for clientId, client in pairs(activeConnections) do
+    for _, client in pairs(activeConnections) do
         if client.capabilities[capabilityName] then
             return client
         end
@@ -995,7 +997,7 @@ end
 -- and renders them to user
 function showLocations(newBufferTitle, lspLocations)
     local bufContents = ""
-    for i, lspLoc in pairs(lspLocations) do
+    for _, lspLoc in ipairs(lspLocations) do
         local fpath = absPathFromFileUri(lspLoc.uri)
         local lineNumber = lspLoc.range.start.line + 1
         local columnNumber = lspLoc.range.start.character + 1
