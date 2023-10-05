@@ -16,10 +16,10 @@ function init()
     config.MakeCommand("hover", hoverAction, config.NoComplete)
     config.MakeCommand("format", formatAction, config.NoComplete)
     config.MakeCommand("autocomplete", completionAction, config.NoComplete)
-    config.MakeCommand("goto-definition", gotoDefinitionAction, config.NoComplete)
-    config.MakeCommand("goto-declaration", gotoDeclarationAction, config.NoComplete)
-    config.MakeCommand("goto-typedefinition", gotoTypeDefinitionAction, config.NoComplete)
-    config.MakeCommand("goto-implementation", gotoImplementationAction, config.NoComplete)
+    config.MakeCommand("goto-definition", gotoAction("definition"), config.NoComplete)
+    config.MakeCommand("goto-declaration", gotoAction("declaration"), config.NoComplete)
+    config.MakeCommand("goto-typedefinition", gotoAction("typeDefinition"), config.NoComplete)
+    config.MakeCommand("goto-implementation", gotoAction("implementation"), config.NoComplete)
     config.MakeCommand("find-references", findReferencesAction, config.NoComplete)
 end
 
@@ -320,12 +320,12 @@ function LSPClient:handleResponseResult(method, result)
             return
         end
         showLocations("references", result)
-    elseif (
+    elseif
         method == "textDocument/declaration" or
         method == "textDocument/definition" or
         method == "textDocument/typeDefinition" or
         method == "textDocument/implementation"
-    ) then
+    then
         -- result: Location | Location[] | LocationLink[] | null
         if result == nil or table.empty(result) then
             infobar(string.format("%s not found", method:match("textDocument/(.*)$")))
@@ -595,11 +595,6 @@ function gotoAction(kind)
         end
     end
 end
-
-gotoDeclarationAction    = gotoAction("declaration")
-gotoDefinitionAction     = gotoAction("definition")
-gotoTypeDefinitionAction = gotoAction("typeDefinition")
-gotoImplementationAction = gotoAction("implementation")
 
 function findReferencesAction(bufpane)
     local client = findClientWithCapability("referencesProvider", "finding references")
