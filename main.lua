@@ -8,6 +8,9 @@ local util = import("micro/util")
 local go_os = import("os")
 local go_strings = import("strings")
 
+local settings = settings
+local json = json
+
 function init()
     micro.SetStatusInfoFn("mlsp.status")
     config.MakeCommand("lsp", startServer, config.NoComplete)
@@ -23,14 +26,9 @@ function init()
     config.MakeCommand("find-references", findReferencesAction, config.NoComplete)
 end
 
--- not sure if this is the best way to import code from plugin directory...
-config.AddRuntimeFile("mlsp", config.RTPlugin, "json.lua")
-local json = loadstring(config.ReadRuntimeFile(config.RTPlugin, "json"))()
-
-config.AddRuntimeFile("mlsp", config.RTPlugin, "settings.lua")
-local settings = loadstring(config.ReadRuntimeFile(config.RTPlugin, "settings"))()
-
 local activeConnections = {}
+local allConnections = {}
+setmetatable(allConnections, { __index = function (_, k) return activeConnections[k] end })
 local docBuffers = {}
 local lastAutocompletion = -1
 
@@ -55,8 +53,7 @@ local LSPRange = {
 function status(buf)
     local servers = {}
     for _, client in pairs(activeConnections) do
-        local name = client.name or client.command:match("%S+")
-        table.insert(servers, name)
+        table.insert(servers, client.clientId)
     end
     if #servers == 0 then
         return "off"
@@ -67,49 +64,54 @@ function status(buf)
     end
 end
 
-function startServer(bufpane, args)
-    local success, lspServerCommand = pcall(function() return args[1] end)
-    if not success then
+function startServer(bufpane, argsUserdata)
+
+    local args = {}
+    for _, a in userdataIterator(argsUserdata) do
+        table.insert(args, a)
+    end
+
+    local server
+    if next(args) ~= nil then
+        local cmd = table.remove(args, 1)
+        server = {
+            cmd = cmd,
+            args = args
+        }
+    else
         local ftype = bufpane.Buf:FileType()
-        lspServerCommand = settings.languageServers[ftype]
-        if lspServerCommand == nil then
+        server = settings.defaultLanguageServer[ftype]
+        if server == nil then
             infobar(string.format("ERROR: no language server set up for file type '%s'", ftype))
             return
         end
     end
 
-    for _, client in pairs(activeConnections) do
-        if client.command == lspServerCommand then
-            infobar(string.format("'%s' is already running", lspServerCommand))
-            return
-        end
-    end
-
-    LSPClient:initialize(lspServerCommand)
+    LSPClient:initialize(server)
 end
 
-function stopServers(bufpane, args)
-    local success, lspServerCommand = pcall(function() return args[1] end)
-    local stopAll = not success
+function stopServers(bufpane, argsUserdata)
+    local hasArgs, name = pcall(function() return argsUserdata[1] end)
 
     local stoppedClients = {}
-    for clientId, client in pairs(activeConnections) do
-        if stopAll or client.command == lspServerCommand then
+    if not hasArgs then -- stop all
+        for clientId, client in pairs(activeConnections) do
             client:stop()
-            table.insert(stoppedClients, clientId)
         end
-    end
-    for _, clientId in ipairs(stoppedClients) do
-        activeConnections[clientId] = nil
+        activeConnections = {}
+    elseif activeConnections[name] then
+        activeConnections[name]:stop()
+        activeConnections[name] = nil
+    else
+        infobar(string.format("ERROR: unable to find active language server with name '%s'", name))
     end
 end
 
 function showLog(bufpane, args)
-    local hasArgs, lspServerCommand = pcall(function() return args[1] end)
+    local hasArgs, name = pcall(function() return args[1] end)
 
-    local foundClient
     for _, client in pairs(activeConnections) do
-        if not hasArgs or client.command:startsWith(lspServerCommand) then
+        if not hasArgs or client.name == name then
             foundClient = client
             break
         end
@@ -120,13 +122,12 @@ function showLog(bufpane, args)
         return
     end
 
-
     if foundClient.stderr == "" then
         infobar(foundClient.clientId .. " has not written anything to stderr")
         return
     end
 
-    local title = string.format("Log for '%s' (%s)", foundClient.command, foundClient.clientId)
+    local title = string.format("Log for '%s' (%s)", foundClient.name, foundClient.clientId)
     local newBuffer = buffer.NewBuffer(foundClient.stderr, title)
 
     newBuffer:SetOption("filetype", "text")
@@ -136,18 +137,20 @@ function showLog(bufpane, args)
     micro.CurPane():HSplitBuf(newBuffer)
 end
 
-function LSPClient:initialize(lspServerCommand)
-    local args = lspServerCommand:split()
-    local runCommand = table.remove(args, 1)
+function LSPClient:initialize(server)
+    local clientId = server.shortName or server.cmd
+
+    if allConnections[clientId] ~= nil then
+        infobar(string.format("%s is already running", clientId))
+        return
+    end
 
     local client = {}
     setmetatable(client, LSPClient)
 
-    local clientId = string.format("%s-%04x", runCommand, math.random(65536))
-    activeConnections[clientId] = client
+    allConnections[clientId] = client
 
     client.clientId = clientId
-    client.command = lspServerCommand
     client.requestId = 0
     client.stderr = ""
     client.buffer = ""
@@ -159,7 +162,8 @@ function LSPClient:initialize(lspServerCommand)
     client.openFiles = {}
     -- the last parameter(s) to JobSpawn are userargs which get passed down to
     -- the callback functions (onStdout, onStderr, onExit)
-    client.job = shell.JobSpawn(runCommand, args, onStdout, onStderr, onExit, clientId)
+    log(string.format("Starting '%s' with args", server.cmd), server.args)
+    client.job = shell.JobSpawn(server.cmd, server.args, onStdout, onStderr, onExit, clientId)
 
     if client.job.Err ~= nil then
         infobar(string.format("Error: %s", client.job.Err:Error()))
@@ -168,7 +172,7 @@ function LSPClient:initialize(lspServerCommand)
     local wd, _ = go_os.Getwd()
     local rootUri = string.format("file://%s", wd:uriEncode())
 
-    client:request("initialize", {
+    local params = {
         processId = go_os.Getpid(),
         rootUri = rootUri,
         workspaceFolders = { { name = "root", uri = rootUri } },
@@ -178,7 +182,12 @@ function LSPClient:initialize(lspServerCommand)
                 formatting = { dynamicRegistration = false }
             }
         }
-    })
+    }
+    if server.initializationOptions ~= nil then
+        params.initializationOptions = server.initializationOptions
+    end
+
+    client:request("initialize", params)
     return client
 end
 
@@ -243,15 +252,17 @@ end
 
 function LSPClient:handleResponseResult(method, result)
     if method == "initialize" then
-        self.capabilities = result.capabilities
+        self.serverCapabilities = result.capabilities
         if result.serverInfo then
             self.serverName = result.serverInfo.name
             self.serverVersion = result.serverInfo.version
             infobar(string.format("Initialized %s version %s", self.serverName, self.serverVersion))
         else
-            infobar(string.format("Initialized '%s' (no version information)", self.command))
+            infobar(string.format("Initialized '%s' (no version information)", self.clientId))
         end
         self:notification("initialized")
+        activeConnections[self.clientId] = self
+        allConnections[self.clientId] = nil
         -- FIXME: iterate over *all* currently open buffers
         onBufferOpen(micro.CurPane().Buf)
     elseif method == "textDocument/hover" then
@@ -618,20 +629,21 @@ end
 function onStdout(text, userargs)
     local clientId = userargs[1]
     log("<-(", clientId, "[stdout] )", text, "\n\n")
-    local client = activeConnections[clientId]
+    local client = allConnections[clientId]
     client:onStdout(text)
 end
 
 function onStderr(text, userargs)
     local clientId = userargs[1]
     -- log("<-(", clientId, "[stderr] )", text, "\n\n")
-    local client = activeConnections[clientId]
+    local client = allConnections[clientId]
     client.stderr = client.stderr .. text
 end
 
 function onExit(text, userargs)
     local clientId = userargs[1]
     activeConnections[clientId] = nil
+    allConnections[clientId] = nil
     log(clientId, "exited")
     infobar(clientId .. " exited")
 end
@@ -639,6 +651,7 @@ end
 function onBufferOpen(buf)
     if buf.Type.Kind ~= buffer.BTDefault then return end
     if buf:FileType() == "unknown" then return end
+
 
     local filePath = buf.AbsPath
 
@@ -650,6 +663,16 @@ function onBufferOpen(buf)
 
     for _, client in pairs(activeConnections) do
         client:didOpen(buf)
+    end
+
+    local autostarts = settings.autostart[buf:FileType()]
+    if autostarts ~= nil then
+        for _, server in ipairs(autostarts) do
+            local clientId = server.shortName or server.cmd
+            if allConnections[clientId] == nil then
+                LSPClient:initialize(server)
+            end
+        end
     end
 end
 
@@ -943,7 +966,7 @@ function findClientWithCapability(capabilityName, featureDescription)
     end
 
     for _, client in pairs(activeConnections) do
-        if client.capabilities[capabilityName] then
+        if client.serverCapabilities[capabilityName] then
             return client
         end
     end

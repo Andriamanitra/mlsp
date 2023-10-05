@@ -22,7 +22,6 @@
 -- SOFTWARE.
 --
 
-local json = { _version = "0.1.3" }
 
 -- by default the empty table ({} in lua) gets serialized into json array
 -- this hack allows us to use json.object when we want to emit an empty object
@@ -31,8 +30,6 @@ local emptyMap_metatable = {}
 emptyMap_metatable.__index = emptyMap_metatable
 local emptyMap = {}
 setmetatable(emptyMap, emptyMap_metatable)
-json.object = emptyMap
-
 
 -------------------------------------------------------------------------------
 -- Encode
@@ -140,10 +137,6 @@ encode = function(val, stack)
   error("unexpected type '" .. t .. "'")
 end
 
-
-function json.encode(val)
-  return ( encode(val) )
-end
 
 
 -------------------------------------------------------------------------------
@@ -382,7 +375,7 @@ parse = function(str, idx)
 end
 
 
-function json.decode(str)
+local function decode(str)
   if type(str) ~= "string" then
     error("expected argument of type string, got " .. type(str))
   end
@@ -395,4 +388,9 @@ function json.decode(str)
 end
 
 
-return json
+json = {
+  _version = "0.2.0",
+  object = emptyMap,
+  decode = function(s) return decode(s) end,
+  encode = function(o) return encode(o) end
+}

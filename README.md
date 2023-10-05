@@ -4,9 +4,11 @@ LSP client for [micro-editor](https://github.com/zyedidia/micro).
 Note that this is a work in progress and has not yet been tested extensively – expect there to be some bugs.
 Please [open an issue](https://github.com/Andriamanitra/mlsp/issues/new) if you run into any!
 
+
 ## Demo
 
 [https://asciinema.org/a/610761](https://asciinema.org/a/610761)
+
 
 ## Installation
 
@@ -21,17 +23,16 @@ programming languages you want to use.
 
 The plugin currently provides following commands:
 
-- `lsp "deno lsp"` (the quotes are required when the command takes arguments)
-  starts a language server by executing command `deno lsp`. Without arguments
-  the `lsp` command will try to guess the right server by looking at the
-  currently open filetype.
-- `lsp-stop "deno lsp"` stops the `deno lsp` language server. Without arguments
+- `lsp deno lsp` starts a language server by executing command `deno lsp`.
+  Without arguments the `lsp` command will try to guess the right server by
+  looking at the currently open filetype.
+- `lsp-stop deno` stops the language server with name `deno`. Without arguments
   the `lsp-stop` command will stop _all_ currently running language servers.
-- `hover` shows hover information for the code under cursor
-- `format` formats the buffer that is currently open
+- `hover` shows hover information for the code under cursor.
+- `format` formats the buffer that is currently open.
 - `autocomplete` for code completion suggestions. PROTIP: If you wish to use the
   same key as micro's autocompletion (tab by default), enable `tabAutocomplete`
-  in `settings.lua` instead of binding `command:autocomplete` to a key!
+  in `config.lua` instead of binding `command:autocomplete` to a key!
 - `goto-definition` – open the definition for the symbol under cursor
 - `goto-declaration` – open the declaration for the symbol under cursor
 - `goto-typedefinition` – open the type definition for the symbol under cursor
@@ -46,15 +47,17 @@ something like this to your `bindings.json`:
   "F7": "command:lsp",
   "F8": "command:format",
   "Alt-h": "command:hover",
-  "Alt-d": "command:goto-definition"
+  "Alt-d": "command:goto-definition",
+  "Alt-r": "command:find-references"
 }
 ```
+
 
 ## Supported features
 
 - [x] get hover information
-- [x] show diagnostics (disabled by default, edit `settings.lua` to enable)
-- [x] autocomplete using tab (disabled by default, edit `settings.lua` to enable)
+- [x] show diagnostics (disabled by default, edit `config.lua` to enable)
+- [x] autocomplete using tab (disabled by default, edit `config.lua` to enable)
 - [x] format document
 - [x] format selection
 - [x] go to definition
@@ -66,6 +69,7 @@ something like this to your `bindings.json`:
 - [ ] code actions
 - [ ] incremental document synchronization (better performance when editing large files)
 - [ ] [suggest a feature](https://github.com/Andriamanitra/mlsp/issues/new)
+
 
 ## Showing LSP information on statusline
 
@@ -82,14 +86,12 @@ See [micro documentation](https://github.com/zyedidia/micro/blob/master/runtime/
 and the built-in [status plugin](https://github.com/zyedidia/micro/blob/master/runtime/plugins/status/help/status.md)
 for more information on customizing the statusline.
 
+
 ## Known issues
 
 - When using multiple language servers at the same time there is no good way to
-  specify which server should handle which types of requests. Until this is
-  addressed you should make sure to start the language servers in order of
-  preference, because only the first one that can handle the request type will
-  be used. For example if you start `pylsp` before `ruff-lsp` you will get better
-  hover information.
+  specify which server should handle which types of requests.
+
 
 ## Other similar projects
 
