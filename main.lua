@@ -770,8 +770,8 @@ function docEdit(bufpane)
     end
 end
 
--- run docEdit only when nothing has changed for 200 milliseconds
-onDocumentEdit = debounce(docEdit, 200)
+-- run docEdit only when nothing has changed for 350 milliseconds
+onDocumentEdit = debounce(docEdit, 350)
 
 function onCursorUp(bufpane)       clearAutocomplete() end
 function onCursorDown(bufpane)     clearAutocomplete() end
