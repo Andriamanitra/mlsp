@@ -178,8 +178,8 @@ function LSPClient:initialize(server)
         workspaceFolders = { { name = "root", uri = rootUri } },
         capabilities = {
             textDocument = {
+                synchronization = { didSave = true, willSave = false },
                 hover = { contentFormat = {"plaintext", "markdown"} },
-                formatting = { dynamicRegistration = false }
             }
         }
     }
