@@ -7,6 +7,7 @@ local buffer = import("micro/buffer")
 local util = import("micro/util")
 local go_os = import("os")
 local go_strings = import("strings")
+local go_time = import("time")
 
 local settings = settings
 local json = json
@@ -624,7 +625,6 @@ end
 
 -- EVENTS (LUA CALLBACKS)
 -- https://github.com/zyedidia/micro/blob/master/runtime/help/plugins.md#lua-callbacks
--- FIXME: split bufpanes?
 
 function onStdout(text, userargs)
     local clientId = userargs[1]
@@ -744,7 +744,22 @@ function preAutocomplete(bufpane)
 end
 
 -- FIXME: figure out how to disable all this garbage when there are no active connections
-function onDocumentEdit(bufpane)
+
+function debounce(fn, delayMilliseconds)
+    local dur = go_time.ParseDuration(string.format("%dms", delayMilliseconds))
+    local timer
+    local fnArgs
+    return function(...)
+        fnArgs = {...}
+        if timer == nil then
+            timer = go_time.AfterFunc(dur, function() fn(unpack(fnArgs)) end)
+        else
+            timer:Reset(dur)
+        end
+    end
+end
+
+function docEdit(bufpane)
     -- filetype is "unknown" for the command prompt
     if bufpane.Buf:FileType() == "unknown" then
         return
@@ -754,6 +769,9 @@ function onDocumentEdit(bufpane)
         client:didChange(bufpane.Buf)
     end
 end
+
+-- run docEdit only when nothing has changed for 200 milliseconds
+onDocumentEdit = debounce(docEdit, 200)
 
 function onCursorUp(bufpane)       clearAutocomplete() end
 function onCursorDown(bufpane)     clearAutocomplete() end
