@@ -731,6 +731,10 @@ function preAutocomplete(bufpane)
     -- FIXME: invent a better heuristic than line number for this
     if lastAutocompletion == cursor.Y then return end
 
+    -- make sure document state is synchronized before requesting
+    -- completions (it might not be because of the debounce delay)
+    docEdit(bufpane)
+
     local charBeforeCursor = util.RuneStr(cursor:RuneUnder(cursor.X-1))
 
     if util.IsWordChar(charBeforeCursor) then
