@@ -91,7 +91,8 @@ for more information on customizing the statusline.
 
 - When using multiple language servers at the same time there is no good way to
   specify which server should handle which types of requests.
-
+- Autocompletion is completely messed up when using `rust-analyzer` as the language server.
+  The completions can take over 10 seconds to arrive and when they do none of them make any sense.
 
 ## Other similar projects
 

@@ -181,6 +181,13 @@ function LSPClient:initialize(server)
             textDocument = {
                 synchronization = { didSave = true, willSave = false },
                 hover = { contentFormat = {"plaintext", "markdown"} },
+                completion = {
+                    completionItem = {
+                        snippetSupport = false,
+                        documentationFormat = {},
+                    },
+                    contextSupport = true
+                }
             }
         }
     }
@@ -586,7 +593,11 @@ function completionAction(bufpane)
         local cursor = buf:GetActiveCursor()
         client:request("textDocument/completion", {
             textDocument = client:textDocumentIdentifier(buf),
-            position = { line = cursor.Y, character = cursor.X }
+            position = { line = cursor.Y, character = cursor.X },
+            context = {
+                -- 1 = Invoked, 2 = TriggerCharacter, 3 = TriggerForIncompleteCompletions
+                triggerKind = 1,
+            }
         })
     end
 end
@@ -710,6 +721,9 @@ function onSave(bufpane)
 end
 
 function preAutocomplete(bufpane)
+    -- use micro's own autocompleter if there is no LSP connection
+    if next(activeConnections) == nil then return end
+
     if not settings.tabAutocomplete then return end
 
     -- "[µlsp] no autocompletions" message can be confusing if it does
@@ -717,9 +731,6 @@ function preAutocomplete(bufpane)
     bufpane:ClearInfo()
 
     local cursor = bufpane.Buf:GetActiveCursor()
-
-    -- use micro's own autocompleter if there is no LSP connection
-    if next(activeConnections) == nil then return end
 
     -- don't autocomplete at the beginning of the line because you
     -- often want tab to mean indentation there!
@@ -731,20 +742,30 @@ function preAutocomplete(bufpane)
     -- FIXME: invent a better heuristic than line number for this
     if lastAutocompletion == cursor.Y then return end
 
-    -- make sure document state is synchronized before requesting
-    -- completions (it might not be because of the debounce delay)
-    docEdit(bufpane)
-
     local charBeforeCursor = util.RuneStr(cursor:RuneUnder(cursor.X-1))
 
-    if util.IsWordChar(charBeforeCursor) then
+    if charBeforeCursor:match("%S") then
         -- make sure there are at least two empty suggestions to capture
         -- the autocompletion event – otherwise micro inserts '\t' before
         -- the language server has a chance to reply with suggestions
         setCompletions({"", ""})
+
+        -- make sure document state is synchronized before requesting
+        -- completions (it might not be because of the debounce delay)
+        docEdit(bufpane)
+
         completionAction(bufpane)
         lastAutocompletion = cursor.Y
     end
+end
+
+-- Prevent inserting tab when autocompletions are being requested
+function preInsertTab(bufpane)
+    if next(activeConnections) == nil then return true end
+    if not settings.tabAutocomplete then return true end
+
+    local cursor = bufpane.Buf:GetActiveCursor()
+    return lastAutocompletion ~= cursor.Y
 end
 
 -- FIXME: figure out how to disable all this garbage when there are no active connections
@@ -808,8 +829,6 @@ function onOutdentLine(bp)       onDocumentEdit(bp); clearAutocomplete() end
 function onIndentLine(bp)        onDocumentEdit(bp); clearAutocomplete() end
 function onPaste(bp)             onDocumentEdit(bp); clearAutocomplete() end
 function onPlayMacro(bp)         onDocumentEdit(bp); clearAutocomplete() end
-
-function onAutocomplete(bp)      onDocumentEdit(bp) end
 
 
 
