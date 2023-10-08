@@ -13,6 +13,14 @@ local defaultLanguageServerOptions = {
     -- Language server specific options that are sent to the server during
     -- initialization – you can usually omit this field
     initializationOptions = nil,
+
+    -- callback function that is called when language server is initialized
+    -- (useful for debugging and disabling server capabilities)
+    -- For example to disable getting hover information from a server:
+    -- onInitialized = function(client)
+    --     client.serverCapabilities.hoverProvider = false
+    -- end
+    onInitialized = nil,
 }
 
 -- Pre-made configurations for commonly used language servers – you can also
@@ -62,11 +70,19 @@ languageServer = {
         args = {"--lsp"}
     },
     ruff = {
-        cmd = "ruff-lsp"
+        cmd = "ruff-lsp",
+        onInitialized = function(client)
+            -- does not give useful results
+            client.serverCapabilities.hoverProvider = false
+        end
     },
     rustAnalyzer = {
         shortName = "rust",
-        cmd = "rust-analyzer"
+        cmd = "rust-analyzer",
+        onInitialized = function(client)
+            -- too buggy to use currently
+            client.serverCapabilities.completionProvider = false
+        end
     },
     solargraph = {
         cmd = "solargraph",

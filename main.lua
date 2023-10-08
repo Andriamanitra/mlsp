@@ -163,9 +163,12 @@ function LSPClient:initialize(server)
     client.serverVersion = nil
     client.sentRequests = {}
     client.openFiles = {}
+    client.onInitialized = server.onInitialized
+
+    log(string.format("Starting '%s' with args", server.cmd), server.args)
+
     -- the last parameter(s) to JobSpawn are userargs which get passed down to
     -- the callback functions (onStdout, onStderr, onExit)
-    log(string.format("Starting '%s' with args", server.cmd), server.args)
     client.job = shell.JobSpawn(server.cmd, server.args, onStdout, onStderr, onExit, clientId)
 
     if client.job.Err ~= nil then
@@ -273,6 +276,9 @@ function LSPClient:handleResponseResult(method, result)
         self:notification("initialized")
         activeConnections[self.clientId] = self
         allConnections[self.clientId] = nil
+        if type(self.onInitialized) == "function" then
+            self:onInitialized()
+        end
         -- FIXME: iterate over *all* currently open buffers
         onBufferOpen(micro.CurPane().Buf)
     elseif method == "textDocument/hover" then
@@ -725,8 +731,8 @@ end
 function preAutocomplete(bufpane)
     -- use micro's own autocompleter if there is no LSP connection
     if next(activeConnections) == nil then return end
-
     if not settings.tabAutocomplete then return end
+    if findClientWithCapability("completionProvider") == nil then return end
 
     -- "[µlsp] no autocompletions" message can be confusing if it does
     -- not get cleared before falling back to micro's own completion
@@ -1013,7 +1019,9 @@ function findClientWithCapability(capabilityName, featureDescription)
             return client
         end
     end
-    infobar(string.format("None of the active language server(s) support %s", featureDescription))
+    if featureDescription ~= nil then
+        infobar(string.format("None of the active language server(s) support %s", featureDescription))
+    end
     return nil
 end
 
