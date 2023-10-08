@@ -89,7 +89,7 @@ for more information on customizing the statusline.
 
 ## Known issues
 
-- Autocompletion is completely messed up when using `rust-analyzer` as the language server.
+- Autocompletion with `rust-analyzer` is currently completely bugged so the feature is disabled in the default config.
   The completions can take over 10 seconds to arrive and when they do none of them make any sense.
 
 ## Other similar projects
