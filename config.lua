@@ -18,7 +18,7 @@ local defaultLanguageServerOptions = {
 -- Pre-made configurations for commonly used language servers – you can also
 -- define your own servers to be used in settings at the bottom of this file.
 -- See defaultLanguageServerOptions above for the available options.
-local languageServer = {
+languageServer = {
     clangd = {
         cmd = "clangd"
     },

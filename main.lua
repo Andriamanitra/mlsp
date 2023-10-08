@@ -75,10 +75,12 @@ function startServer(bufpane, argsUserdata)
     local server
     if next(args) ~= nil then
         local cmd = table.remove(args, 1)
-        server = {
-            cmd = cmd,
-            args = args
-        }
+        -- prefer languageServer with given name from config.lua if no args given
+        if next(args) == nil and languageServer[cmd] ~= nil then
+            server = languageServer[cmd]
+        else
+            server = languageServer[cmd] or { cmd = cmd, args = args }
+        end
     else
         local ftype = bufpane.Buf:FileType()
         server = settings.defaultLanguageServer[ftype]
