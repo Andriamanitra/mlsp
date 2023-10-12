@@ -906,6 +906,10 @@ function editBuf(buf, textedits)
 
     for _, textedit in pairs(textedits) do
         local startLoc, endLoc = LSPRange.toLocs(textedit.range)
+        if endLoc:GreaterThan(buf:End()) then
+            endLoc = buf:End()
+        end
+
         table.insert(editedBufParts, util.String(buf:Substr(prevEnd, startLoc)))
         table.insert(editedBufParts, textedit.newText)
         prevEnd = endLoc
