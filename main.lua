@@ -291,6 +291,8 @@ function LSPClient:handleResponseResult(method, result)
             infobar(result.contents)
         elseif type(result.contents.value) == "string" then
             infobar(result.contents.value)
+        else
+            infobar("WARNING: ignored textDocument/hover result due to unrecognized format")
         end
     elseif method == "textDocument/formatting" then
         if result == nil or next(result) == nil then
