@@ -531,7 +531,7 @@ function log(...)
 end
 
 function infobar(text)
-    micro.InfoBar():Message("[µlsp] " .. text:gsub("%s+", " "))
+    micro.InfoBar():Message("[µlsp] " .. text:gsub("(%a)\n(%a)", "%1 / %2"):gsub("%s+", " "))
 end
 
 
