@@ -656,7 +656,7 @@ function openDiagnosticBufferAction(bufpane)
 
     for _, client in pairs(activeConnections) do
         local diagnostics = client.openFiles[filePath].diagnostics
-        for _, diagnostic in pairs(diagnostics) do
+        for idx, diagnostic in pairs(diagnostics) do
             local startLoc, endLoc = LSPRange.toLocs(diagnostic.range)
             if cursor.Loc.Y == startLoc.Y then
                 found = true
@@ -668,7 +668,8 @@ function openDiagnosticBufferAction(bufpane)
                     diagnostic.severity and severityToString(diagnostic.severity) or "-",
                     diagnostic.message
                 )
-                local newBuffer = buffer.NewBuffer(bufContents, string.format("%s diagnostics", client.clientId))
+                local bufTitle = string.format("%s diagnostics #%d", client.clientId, idx)
+                local newBuffer = buffer.NewBuffer(bufContents, bufTitle)
                 newBuffer.Type.Readonly = true
                 local height = bufpane:GetView().Height
                 local newpane = micro.CurPane():HSplitBuf(newBuffer)
