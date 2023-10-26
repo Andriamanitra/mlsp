@@ -25,6 +25,7 @@ function init()
     config.MakeCommand("goto-typedefinition", gotoAction("typeDefinition"), config.NoComplete)
     config.MakeCommand("goto-implementation", gotoAction("implementation"), config.NoComplete)
     config.MakeCommand("find-references", findReferencesAction, config.NoComplete)
+    config.MakeCommand("diagnostic-info", openDiagnosticBufferAction, config.NoComplete)
 end
 
 local activeConnections = {}
@@ -395,6 +396,8 @@ function LSPClient:handleNotification(notification)
             return
         end
 
+        self.openFiles[filePath].diagnostics = notification.params.diagnostics
+
         -- in the usual case there is only one buffer with the same document so a loop
         -- would not be necessary, but there may sometimes be multiple buffers with the
         -- same exact document open!
@@ -442,7 +445,10 @@ function LSPClient:didOpen(buf)
     end
 
     local bufText = util.String(buf:Bytes())
-    self.openFiles[filePath] = {version = 1}
+    self.openFiles[filePath] = {
+        version = 1,
+        diagnostics = {}
+    }
     textDocument.languageId = buf:FileType()
     textDocument.version = 1
     textDocument.text = bufText
@@ -642,6 +648,40 @@ function findReferencesAction(bufpane)
     end
 end
 
+function openDiagnosticBufferAction(bufpane)
+    local buf = bufpane.Buf
+    local cursor = buf:GetActiveCursor()
+    local filePath = buf.AbsPath
+    local found = false
+
+    for _, client in pairs(activeConnections) do
+        local diagnostics = client.openFiles[filePath].diagnostics
+        for _, diagnostic in pairs(diagnostics) do
+            local startLoc, endLoc = LSPRange.toLocs(diagnostic.range)
+            if cursor.Loc.Y == startLoc.Y then
+                found = true
+                local bufContents = string.format(
+                    "%s %s\nhref: %s\nseverity: %s\n\n%s",
+                    diagnostic.source or client.serverName or client.clientId,
+                    diagnostic.code or "(no error code)",
+                    diagnostic.codeDescription and diagnostic.codeDescription.href or "-",
+                    diagnostic.severity and severityToString(diagnostic.severity) or "-",
+                    diagnostic.message
+                )
+                local newBuffer = buffer.NewBuffer(bufContents, string.format("%s diagnostics", client.clientId))
+                newBuffer.Type.Readonly = true
+                local height = bufpane:GetView().Height
+                local newpane = micro.CurPane():HSplitBuf(newBuffer)
+                if height > 16 then
+                    bufpane:ResizePane(height - 8)
+                end
+            end
+        end
+    end
+    if not found then
+        infobar("found no diagnostics on current line")
+    end
+end
 
 
 -- EVENTS (LUA CALLBACKS)
@@ -937,26 +977,24 @@ function editBuf(buf, textedits)
     end
 end
 
-function showDiagnostics(buf, owner, diagnostics)
-    local SEVERITY_ERROR = 1
-    local SEVERITY_WARNING = 2
-    local SEVERITY_INFORMATION = 3
-    local SEVERITY_HINT = 4
+function severityToString(severity)
     local severityTable = {
-        [SEVERITY_ERROR] = "error",
-        [SEVERITY_WARNING] = "warning",
-        [SEVERITY_INFORMATION] = "information",
-        [SEVERITY_HINT] = "hint"
+        [1] = "error",
+        [2] = "warning",
+        [3] = "information",
+        [4] = "hint"
     }
+    return severityTable[severity] or "information"
+end
+
+function showDiagnostics(buf, owner, diagnostics)
 
     buf:ClearMessages(owner)
 
     for _, diagnostic in pairs(diagnostics) do
-        if diagnostic.severity == nil then
-            diagnostic.severity = SEVERITY_INFORMATION
-        end
+        local severity = severityToString(diagnostic.severity)
 
-        if settings.showDiagnostics[severityTable[diagnostic.severity]] then
+        if settings.showDiagnostics[severity] then
             local extraInfo = nil
             if diagnostic.code ~= nil then
                 diagnostic.code = tostring(diagnostic.code)
@@ -975,9 +1013,9 @@ function showDiagnostics(buf, owner, diagnostics)
             local lineNumber = diagnostic.range.start.line + 1
 
             local msgType = buffer.MTInfo
-            if diagnostic.severity == SEVERITY_WARNING then
+            if severity == "warning" then
                 msgType = buffer.MTWarning
-            elseif diagnostic.severity == SEVERITY_ERROR then
+            elseif severity == "error" then
                 msgType = buffer.MTError
             end
 
@@ -990,7 +1028,10 @@ function showDiagnostics(buf, owner, diagnostics)
                 endLoc = buffer.Loc(endLineLength, endLoc.Y)
             end
 
-            local msg = string.format("[µlsp] %s%s", extraInfo or "", diagnostic.message)
+            local msg = diagnostic.message
+            -- make the msg look better on one line if there's newlines or extra whitespace
+            msg = msg:gsub("(%a)\n(%a)", "%1 / %2"):gsub("%s+", " ")
+            msg = string.format("[µlsp] %s%s", extraInfo or "", msg)
             buf:AddMessage(buffer.NewMessage(owner, msg, startLoc, endLoc, msgType))
         end
     end
