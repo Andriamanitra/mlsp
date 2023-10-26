@@ -78,11 +78,7 @@ languageServer = {
     },
     rustAnalyzer = {
         shortName = "rust",
-        cmd = "rust-analyzer",
-        onInitialized = function(client)
-            -- too buggy to use currently
-            client.serverCapabilities.completionProvider = false
-        end
+        cmd = "rust-analyzer"
     },
     solargraph = {
         cmd = "solargraph",

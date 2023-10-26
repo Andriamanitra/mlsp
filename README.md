@@ -90,8 +90,7 @@ for more information on customizing the statusline.
 
 ## Known issues
 
-- Autocompletion with `rust-analyzer` is currently completely bugged so the feature is disabled in the default config.
-  The completions can take over 10 seconds to arrive and when they do none of them make any sense.
+- The very first autocompletion with `rust-analyzer` after initialization is very slow (it can take multiple seconds).
 
 ## Other similar projects
 

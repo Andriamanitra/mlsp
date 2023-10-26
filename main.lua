@@ -327,13 +327,7 @@ function LSPClient:handleResponseResult(method, result)
             return
         end
 
-        local rawcompletions = {}
-        for _, completionItem in pairs(completions) do
-            table.insert(rawcompletions, completionItem.insertText or completionItem.label)
-        end
-
         local cursor = micro.CurPane().Buf:GetActiveCursor()
-
         local backward = cursor.X
         while backward > 0 and util.IsWordChar(util.RuneStr(cursor:RuneUnder(backward-1))) do
             backward = backward - 1
@@ -341,9 +335,41 @@ function LSPClient:handleResponseResult(method, result)
 
         cursor:SetSelectionStart(buffer.Loc(backward, cursor.Y))
         cursor:SetSelectionEnd(buffer.Loc(cursor.X, cursor.Y))
-        cursor:DeleteSelection()
 
-        setCompletions(rawcompletions)
+        local completionList = {}
+
+        if self.serverName == "rust-analyzer" then
+            -- unlike any other language server I've tried, rust-analyzer gives
+            -- completions that don't start with current stem, end with special
+            -- characters (eg. self::) and also occasionally contain duplicates
+            -- (same identifier from different namespace)
+
+            local stem = cursor:GetSelection()
+            stem = util.String(stem)
+
+            local uniqueCompletions = {}
+            for _, completionItem in pairs(completions) do
+                local item = completionItem.insertText or completionItem.label
+                -- FIXME: micro's autocomplete doesn't deal well with non-alnum
+                -- completions so we are currently just discarding them
+                if item:match("^[%a%d_]+$") and item:startsWith(stem) then
+                    uniqueCompletions[item] = 1
+                end
+            end
+
+            for c, _ in pairs(uniqueCompletions) do
+                table.insert(completionList, c)
+            end
+        else
+            for _, completionItem in pairs(completions) do
+                local item = completionItem.insertText or completionItem.label
+                table.insert(completionList, item)
+            end
+        end
+
+        cursor:DeleteSelection()
+        setCompletions(completionList)
+
     elseif method == "textDocument/references" then
         if result == nil or table.empty(result) then
             infobar("No references found")
