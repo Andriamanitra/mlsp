@@ -30,6 +30,9 @@ languageServer = {
     clangd = {
         cmd = "clangd"
     },
+    clojurelsp = {
+        cmd = "clojure-lsp"
+    },
     crystalline = {
         cmd = "crystalline"
     },
@@ -117,6 +120,7 @@ settings = {
     -- Language server to use when `lsp` command is executed without args
     defaultLanguageServer = {
         c          = languageServer.clangd,
+        clojure    = languageServer.clojurelsp,
         crystal    = languageServer.crystalline,
         go         = languageServer.gopls,
         haskell    = languageServer.hls,

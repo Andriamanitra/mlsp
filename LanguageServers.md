@@ -1,6 +1,7 @@
 # List of language servers & how to get them
 
 * [C](#c)
+* [Clojure](#clojure)
 * [Crystal](#crystal)
 * [Go](#go)
 * [Haskell](#haskell)
@@ -18,6 +19,12 @@
 - [Clangd](https://clangd.llvm.org/)
   - Installation: [instructions](https://clangd.llvm.org/installation.html)
   - Command: `clangd`
+
+## Clojure
+
+- [clojure-lsp](https://github.com/clojure-lsp/clojure-lsp)
+  - Installation: [instructions](https://clojure-lsp.io/installation/)
+  - Command: `clojure-lsp`
 
 ## Crystal
 
