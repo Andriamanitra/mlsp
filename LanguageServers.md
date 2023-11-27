@@ -92,8 +92,7 @@
   - Command: `pyright-langserver --stdio`
 
 - [ruff-lsp](https://github.com/astral-sh/ruff-lsp)
-  - Only diagnostics and code actions (no formatting, hover information or code
-    navigation)
+  - Only diagnostics, formatting and code actions (no hover information or code navigation)
   - Installation: `pip install ruff-lsp`
   - Command: `ruff-lsp`
 
