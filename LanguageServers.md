@@ -67,6 +67,9 @@
 
 ## Lua
 
+- [luals](https://github.com/luals/lua-language-server)
+  - Installation: [instructions](https://luals.github.io/#other-install)
+  - Command: `lua-language-server` (make sure the executable was installed in your $PATH)
 - [lua-lsp](https://github.com/Alloyed/lua-lsp)
   - Unmaintained. You are in for trouble if you want to get it to work with Lua
     5.4.
