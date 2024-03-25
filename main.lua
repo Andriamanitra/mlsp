@@ -847,7 +847,7 @@ end
 
 -- FIXME: figure out how to disable all this garbage when there are no active connections
 
-function debounce(fn, delayMilliseconds)
+function debounceFallBack(fn, delayMilliseconds)
     local dur = go_time.ParseDuration(string.format("%dms", delayMilliseconds))
     local timer
     local fnArgs
@@ -858,6 +858,30 @@ function debounce(fn, delayMilliseconds)
         else
             timer:Reset(dur)
         end
+    end
+end
+
+function debounce(fn, delayMilliseconds)
+    -- micro.After is only available in micro >2.0.13
+    -- fall back to using go_time.AfterFunc on older builds
+    if type(micro.After) ~= "function" then
+        return debounceFallBack(fn, delayMilliseconds)
+    end
+
+    local dur = go_time.ParseDuration(string.format("%dms", delayMilliseconds))
+    local fnArgs
+    local delayedUntil
+    return function(...)
+        fnArgs = {...}
+        delayedUntil = go_time.Now():Add(dur)
+        micro.After(
+            dur,
+            function()
+                if not go_time.Now():Before(delayedUntil) then
+                    fn(unpack(fnArgs))
+                end
+            end
+        )
     end
 end
 
