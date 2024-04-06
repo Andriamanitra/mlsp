@@ -46,6 +46,18 @@ local LSPRange = {
             ["end"]   = { line = selection[2].Y, character = selection[2].X }
         }
     end,
+    fromDelta = function(delta)
+        local deltaEnd = delta.End
+        -- for some reason delta.End is often 0,0 when inserting characters
+        if deltaEnd.Y == 0 and deltaEnd.X == 0 then
+            deltaEnd = delta.Start
+        end
+
+        return {
+            ["start"] = { line = delta.Start.Y, character = delta.Start.X },
+            ["end"]   = { line = deltaEnd.Y, character = deltaEnd.X }
+        }
+    end,
     toLocs = function(range)
         local a, b = range["start"], range["end"]
         return buffer.Loc(a.character, a.line), buffer.Loc(b.character, b.line)
@@ -497,7 +509,7 @@ function LSPClient:didClose(buf)
     end
 end
 
-function LSPClient:didChange(buf)
+function LSPClient:didChange(buf, changes)
     local textDocument = self:textDocumentIdentifier(buf)
     local filePath = buf.AbsPath
 
@@ -506,7 +518,6 @@ function LSPClient:didChange(buf)
         return
     end
 
-    local bufText = util.String(buf:Bytes())
     local newVersion = self.openFiles[filePath].version + 1
 
     self.openFiles[filePath].version = newVersion
@@ -514,9 +525,7 @@ function LSPClient:didChange(buf)
 
     self:notification("textDocument/didChange", {
         textDocument = textDocument,
-        contentChanges = {
-            { text = bufText }
-        }
+        contentChanges = changes
     })
 end
 
@@ -827,10 +836,6 @@ function preAutocomplete(bufpane)
         -- the language server has a chance to reply with suggestions
         setCompletions({"", ""})
 
-        -- make sure document state is synchronized before requesting
-        -- completions (it might not be because of the debounce delay)
-        docEdit(bufpane)
-
         completionAction(bufpane)
         lastAutocompletion = cursor.Y
     end
@@ -847,57 +852,41 @@ end
 
 -- FIXME: figure out how to disable all this garbage when there are no active connections
 
-function debounceFallBack(fn, delayMilliseconds)
-    local dur = go_time.ParseDuration(string.format("%dms", delayMilliseconds))
-    local timer
-    local fnArgs
-    return function(...)
-        fnArgs = {...}
-        if timer == nil then
-            timer = go_time.AfterFunc(dur, function() fn(unpack(fnArgs)) end)
-        else
-            timer:Reset(dur)
-        end
-    end
-end
+function onBeforeTextEvent(buf, tevent)
+    if next(activeConnections) == nil then return end
 
-function debounce(fn, delayMilliseconds)
-    -- micro.After is only available in micro >2.0.13
-    -- fall back to using go_time.AfterFunc on older builds
-    if type(micro.After) ~= "function" then
-        return debounceFallBack(fn, delayMilliseconds)
-    end
-
-    local dur = go_time.ParseDuration(string.format("%dms", delayMilliseconds))
-    local fnArgs
-    local delayedUntil
-    return function(...)
-        fnArgs = {...}
-        delayedUntil = go_time.Now():Add(dur)
-        micro.After(
-            dur,
-            function()
-                if not go_time.Now():Before(delayedUntil) then
-                    fn(unpack(fnArgs))
-                end
-            end
+    local changes = {}
+    for _, delta in userdataIterator(tevent.Deltas) do
+        table.insert(
+            changes,
+            {
+                range = LSPRange.fromDelta(delta),
+                text = util.String(delta.Text)
+            }
         )
-    end
-end
-
-function docEdit(bufpane)
-    -- filetype is "unknown" for the command prompt
-    if bufpane.Buf:FileType() == "unknown" then
-        return
     end
 
     for _, client in pairs(activeConnections) do
-        client:didChange(bufpane.Buf)
+    	client:didChange(buf, changes)
     end
 end
 
--- run docEdit only when nothing has changed for 350 milliseconds
-onDocumentEdit = debounce(docEdit, 350)
+function fullyUpdate(buf)
+    if next(activeConnections) == nil then return end
+
+    clearAutocomplete()
+    -- filetype is "unknown" for the command prompt
+    if buf:FileType() == "unknown" then
+        return
+    end
+
+    local changes = {
+        { text = util.String(buf:Bytes()) }
+    }
+    for _, client in pairs(activeConnections) do
+        client:didChange(buf, changes)
+    end
+end
 
 function onCursorUp(bufpane)       clearAutocomplete() end
 function onCursorDown(bufpane)     clearAutocomplete() end
@@ -908,29 +897,8 @@ function onCursorRight(bufpane)    clearAutocomplete() end
 function onCursorStart(bufpane)    clearAutocomplete() end
 function onCursorEnd(bufpane)      clearAutocomplete() end
 
-function onRune(bp, rune)        onDocumentEdit(bp); clearAutocomplete() end
-function onMoveLinesUp(bp)       onDocumentEdit(bp); clearAutocomplete() end
-function onMoveLinesDown(bp)     onDocumentEdit(bp); clearAutocomplete() end
-function onDeleteWordRight(bp)   onDocumentEdit(bp); clearAutocomplete() end
-function onDeleteWordLeft(bp)    onDocumentEdit(bp); clearAutocomplete() end
-function onInsertNewline(bp)     onDocumentEdit(bp); clearAutocomplete() end
-function onInsertSpace(bp)       onDocumentEdit(bp); clearAutocomplete() end
-function onBackspace(bp)         onDocumentEdit(bp); clearAutocomplete() end
-function onDelete(bp)            onDocumentEdit(bp); clearAutocomplete() end
-function onInsertTab(bp)         onDocumentEdit(bp); clearAutocomplete() end
-function onUndo(bp)              onDocumentEdit(bp); clearAutocomplete() end
-function onRedo(bp)              onDocumentEdit(bp); clearAutocomplete() end
-function onCut(bp)               onDocumentEdit(bp); clearAutocomplete() end
-function onCutLine(bp)           onDocumentEdit(bp); clearAutocomplete() end
-function onDuplicateLine(bp)     onDocumentEdit(bp); clearAutocomplete() end
-function onDeleteLine(bp)        onDocumentEdit(bp); clearAutocomplete() end
-function onIndentSelection(bp)   onDocumentEdit(bp); clearAutocomplete() end
-function onOutdentSelection(bp)  onDocumentEdit(bp); clearAutocomplete() end
-function onOutdentLine(bp)       onDocumentEdit(bp); clearAutocomplete() end
-function onIndentLine(bp)        onDocumentEdit(bp); clearAutocomplete() end
-function onPaste(bp)             onDocumentEdit(bp); clearAutocomplete() end
-function onPlayMacro(bp)         onDocumentEdit(bp); clearAutocomplete() end
-
+function onUndo(bp) fullyUpdate(bp.Buf) end
+function onRedo(bp) fullyUpdate(bp.Buf) end
 
 
 -- HELPER FUNCTIONS
