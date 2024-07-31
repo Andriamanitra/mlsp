@@ -72,8 +72,12 @@ languageServer = {
         cmd = "rubocop",
         args = {"--lsp"}
     },
+    rubylsp = {
+        cmd = "ruby-lsp"
+    },
     ruff = {
-        cmd = "ruff-lsp",
+        cmd = "ruff",
+        args = {"server"},
         onInitialized = function(client)
             -- does not give useful results
             client.serverCapabilities.hoverProvider = false
@@ -130,7 +134,7 @@ settings = {
         lua        = languageServer.lualsp,
         markdown   = languageServer.deno,
         python     = languageServer.pylsp,
-        ruby       = languageServer.solargraph,
+        ruby       = languageServer.rubylsp,
         rust       = languageServer.rustAnalyzer,
         typescript = languageServer.deno,
         zig        = languageServer.zls,

@@ -94,12 +94,16 @@
   - Installation: `npm install -g pyright`
   - Command: `pyright-langserver --stdio`
 
-- [ruff-lsp](https://github.com/astral-sh/ruff-lsp)
+- [ruff](https://github.com/astral-sh/ruff)
   - Only diagnostics, formatting and code actions (no hover information or code navigation)
-  - Installation: `pip install ruff-lsp`
-  - Command: `ruff-lsp`
+  - Installation: `pip install ruff`
+  - Command: `ruff server`
 
 ## Ruby
+
+- [ruby-lsp](https://github.com/Shopify/ruby-lsp)
+  - Installation: `gem install ruby-lsp`
+  - Command: `ruby-lsp`
 
 - [solargraph](https://github.com/castwide/solargraph)
   - Installation: `gem install solargraph`
