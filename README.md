@@ -38,6 +38,7 @@ The plugin currently provides following commands:
 - `goto-typedefinition` – open the type definition for the symbol under cursor
 - `goto-implementation` – open the implementation for the symbol under cursor
 - `find-references` - find all references to the symbol under cursor (shows the results in a new pane)
+- `document-symbols` - list all symbols in the current document
 - `diagnostic-info` - show more information about a diagnostic on the current line (useful for multiline diagnostic messages)
 
 You can type the commands on micro command prompt or bind them to keys by adding
@@ -66,6 +67,7 @@ something like this to your `bindings.json`:
 - [x] go to implementation
 - [x] go to type definition
 - [x] find references
+- [x] list document symbols
 - [ ] rename symbol
 - [ ] code actions
 - [ ] incremental document synchronization (better performance when editing large files)

@@ -25,6 +25,7 @@ function init()
     config.MakeCommand("goto-typedefinition", gotoAction("typeDefinition"), config.NoComplete)
     config.MakeCommand("goto-implementation", gotoAction("implementation"), config.NoComplete)
     config.MakeCommand("find-references", findReferencesAction, config.NoComplete)
+    config.MakeCommand("document-symbols", documentSymbolsAction, config.NoComplete)
     config.MakeCommand("diagnostic-info", openDiagnosticBufferAction, config.NoComplete)
 end
 
@@ -414,6 +415,55 @@ function LSPClient:handleResponseResult(method, result)
 
             openFileAtLoc(filepath, startLoc)
         end
+    elseif method == "textDocument/documentSymbol" then
+        if result == nil or table.empty(result) then
+            infobar("No symbols found in current document")
+            return
+        end
+        local symbolLocations = {}
+        local symbolLabels = {}
+        local SYMBOLKINDS = {
+	        [1] = "File",
+	        [2] = "Module",
+	        [3] = "Namespace",
+	        [4] = "Package",
+	        [5] = "Class",
+	        [6] = "Method",
+	        [7] = "Property",
+	        [8] = "Field",
+	        [9] = "Constructor",
+	        [10] = "Enum",
+	        [11] = "Interface",
+	        [12] = "Function",
+	        [13] = "Variable",
+	        [14] = "Constant",
+	        [15] = "String",
+	        [16] = "Number",
+	        [17] = "Boolean",
+	        [18] = "Array",
+	        [19] = "Object",
+	        [20] = "Key",
+	        [21] = "Null",
+	        [22] = "EnumMember",
+	        [23] = "Struct",
+	        [24] = "Event",
+	        [25] = "Operator",
+	        [26] = "TypeParameter",
+        }
+        for _, sym in ipairs(result) do
+            -- if sym.location is missing we are dealing with DocumentSymbol[]
+            -- instead of SymbolInformation[]
+            if sym.location == nil then
+                table.insert(symbolLocations, {
+                    uri = micro.CurPane().Buf.Path,
+                    range = sym.range
+                })
+            else
+                table.insert(symbolLocations, sym.location)
+            end
+            table.insert(symbolLabels, string.format("[%s]\t%s", SYMBOLKINDS[sym.kind], sym.name))
+        end
+        showLocations("document symbols", symbolLocations, symbolLabels)
     else
         log("WARNING: dunno what to do with response to", method)
     end
@@ -679,6 +729,16 @@ function findReferencesAction(bufpane)
             textDocument = client:textDocumentIdentifier(buf),
             position = { line = cursor.Y, character = cursor.X },
             context = { includeDeclaration = true }
+        })
+    end
+end
+
+function documentSymbolsAction(bufpane)
+    local client = findClientWithCapability("documentSymbolProvider", "document symbols")
+    if client ~= nil then
+        local buf = bufpane.Buf
+        client:request("textDocument/documentSymbol", {
+            textDocument = client:textDocumentIdentifier(buf)
         })
     end
 end
@@ -1092,7 +1152,12 @@ function findClientWithCapability(capabilityName, featureDescription)
 end
 
 function absPathFromFileUri(uri)
-    return uri:match("file://(.*)$"):uriDecode()
+    local match = uri:match("file://(.*)$")
+    if match then
+        return match:uriDecode()
+    else
+        return uri
+    end
 end
 
 function openFileAtLoc(filepath, loc)
@@ -1126,13 +1191,16 @@ end
 
 -- takes Location[] https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#location
 -- and renders them to user
-function showLocations(newBufferTitle, lspLocations)
+function showLocations(newBufferTitle, lspLocations, labels)
     local bufContents = ""
-    for _, lspLoc in ipairs(lspLocations) do
+    for i, lspLoc in ipairs(lspLocations) do
         local fpath = absPathFromFileUri(lspLoc.uri)
         local lineNumber = lspLoc.range.start.line + 1
         local columnNumber = lspLoc.range.start.character + 1
         local line = string.format("%s:%d:%d\n", fpath, lineNumber, columnNumber)
+        if labels ~= nil then
+            line = labels[i] .. "\t" .. line
+        end
         bufContents = bufContents .. line
     end
 
