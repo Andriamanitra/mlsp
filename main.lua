@@ -199,7 +199,7 @@ function LSPClient:initialize(server)
         capabilities = {
             textDocument = {
                 synchronization = { didSave = true, willSave = false },
-                hover = { contentFormat = {"plaintext", "markdown"} },
+                hover = { contentFormat = {"plaintext"} },
                 completion = {
                     completionItem = {
                         snippetSupport = false,
