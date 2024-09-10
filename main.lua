@@ -1051,9 +1051,7 @@ function editBuf(buf, textedits)
     local newCursorLoc = buffer.Loc(0, 0):Move(cursorByteOffset, buf)
     buf:GetActiveCursor():GotoLoc(newCursorLoc)
 
-    for _, client in pairs(activeConnections) do
-        client:didChange(buf)
-    end
+    fullyUpdate(buf)
 end
 
 function severityToString(severity)
