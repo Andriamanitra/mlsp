@@ -124,6 +124,7 @@ settings = {
     -- Language server to use when `lsp` command is executed without args
     defaultLanguageServer = {
         c          = languageServer.clangd,
+    	["c++"]    = languageServer.clangd,
         clojure    = languageServer.clojurelsp,
         crystal    = languageServer.crystalline,
         go         = languageServer.gopls,

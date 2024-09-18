@@ -1,6 +1,6 @@
 # List of language servers & how to get them
 
-* [C](#c)
+* [C/C++](#cc)
 * [Clojure](#clojure)
 * [Crystal](#crystal)
 * [Go](#go)
@@ -14,7 +14,7 @@
 * [Rust](#rust)
 * [Zig](#zig)
 
-## C
+## C/C++
 
 - [Clangd](https://clangd.llvm.org/)
   - Installation: [instructions](https://clangd.llvm.org/installation.html)
