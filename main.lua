@@ -277,6 +277,13 @@ function LSPClient:handleResponseError(method, error)
     end
 end
 
+function showHoverInfo(results)
+    local bf = buffer.NewBuffer(results, "[µlsp] hover")
+    bf.Type.Scratch = true
+    bf.Type.Readonly = true
+    micro.CurPane():HSplitIndex(bf, true)
+end
+
 function LSPClient:handleResponseResult(method, result)
     if method == "initialize" then
         self.serverCapabilities = result.capabilities
@@ -302,9 +309,9 @@ function LSPClient:handleResponseResult(method, result)
         if result == nil or result.contents == "" or table.empty(result.contents) then
             infobar("no hover results")
         elseif type(result.contents) == "string" then
-            infobar(result.contents)
+            showHoverInfo(result.contents)
         elseif type(result.contents.value) == "string" then
-            infobar(result.contents.value)
+            showHoverInfo(result.contents.value)
         else
             infobar("WARNING: ignored textDocument/hover result due to unrecognized format")
         end
@@ -1158,6 +1165,15 @@ function absPathFromFileUri(uri)
     end
 end
 
+function relPathFromFileUri(uri)
+    local absPath = absPathFromFileUri(uri)
+    local cwd, err = go_os.Getwd()
+    if err ~= nil then -- in case of error return absPath
+        return absPath
+    end
+    return "." .. string.sub(absPath, #cwd + 1, #absPath)
+end
+
 function openFileAtLoc(filepath, loc)
     local bp = micro.CurPane()
 
@@ -1187,17 +1203,38 @@ function openFileAtLoc(filepath, loc)
     bp:Center()
 end
 
+function getLineContentFromPath(filepath, line)
+    local f = io.open(filepath, "rb")
+    if not f then return "ERROR: could not open " .. filepath end
+
+    local cnt = 0
+    local lineContent
+    repeat
+        lineContent = f:read("*l")
+        cnt = cnt + 1
+    until not lineContent or cnt == line
+    f:close()
+
+    return lineContent or "ERROR: invalid line " .. tostring(line)
+end
+
+
 -- takes Location[] https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#location
 -- and renders them to user
 function showLocations(newBufferTitle, lspLocations, labels)
     local bufContents = ""
     for i, lspLoc in ipairs(lspLocations) do
-        local fpath = absPathFromFileUri(lspLoc.uri)
+        local fpath = relPathFromFileUri(lspLoc.uri)
         local lineNumber = lspLoc.range.start.line + 1
         local columnNumber = lspLoc.range.start.character + 1
-        local line = string.format("%s:%d:%d\n", fpath, lineNumber, columnNumber)
-        if labels ~= nil then
-            line = labels[i] .. "\t" .. line
+
+        local line
+        if labels ~= nil then -- document symbols
+            line = string.format("%s:%d:%d: %s\n", fpath, lineNumber, columnNumber, labels[i])
+        else -- references
+            local lineContent, err = getLineContentFromPath(fpath, lineNumber)
+            if err ~= nil then lineContent = string.format("ERROR: %s\n", tostring(err)) end
+            line = string.format("%s:%d:%d:%s\n", fpath, lineNumber, columnNumber, lineContent)
         end
         bufContents = bufContents .. line
     end
@@ -1207,6 +1244,7 @@ function showLocations(newBufferTitle, lspLocations, labels)
     newBuffer.Type.Readonly = true
     micro.CurPane():HSplitBuf(newBuffer)
 end
+
 
 function findBufPaneByPath(fpath)
     if fpath == nil then return nil end
