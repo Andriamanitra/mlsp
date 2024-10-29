@@ -17,6 +17,7 @@ function init()
     config.MakeCommand("lsp", startServer, config.NoComplete)
     config.MakeCommand("lsp-stop", stopServers, config.NoComplete)
     config.MakeCommand("lsp-showlog", showLog, config.NoComplete)
+    config.MakeCommand("lsp-update", contentUpdate, config.NoComplete)
     config.MakeCommand("hover", hoverAction, config.NoComplete)
     config.MakeCommand("format", formatAction, config.NoComplete)
     config.MakeCommand("autocomplete", completionAction, config.NoComplete)
@@ -948,6 +949,8 @@ function fullyUpdate(buf)
     end
 end
 
+function contentUpdate(bp) fullyUpdate(bp.Buf) end
+
 function onCursorUp(bufpane)       clearAutocomplete() end
 function onCursorDown(bufpane)     clearAutocomplete() end
 function onCursorPageUp(bufpane)   clearAutocomplete() end
@@ -957,8 +960,89 @@ function onCursorRight(bufpane)    clearAutocomplete() end
 function onCursorStart(bufpane)    clearAutocomplete() end
 function onCursorEnd(bufpane)      clearAutocomplete() end
 
-function onUndo(bp) fullyUpdate(bp.Buf) end
-function onRedo(bp) fullyUpdate(bp.Buf) end
+local TEXT_EVENT = {INSERT = 1, REMOVE = -1}
+local UNDO_THRESHOLD = 1000
+
+function preUndo(bp)
+    if next(activeConnections) == nil then return true end
+
+    local tevents = {}
+    local stack = bp.Buf.UndoStack
+    local elem = stack.Top
+    if not elem or not elem.Value then return true end
+
+    local tev = elem.Value
+    local startTime = tev.Time:UnixNano() / go_time.Millisecond
+    local endTime = startTime - (startTime % UNDO_THRESHOLD)
+    for _ = 0, stack:Len() do
+        tev = elem.Value
+        if (tev.Time:UnixNano() / go_time.Millisecond) < endTime then break end
+        table.insert(tevents, tev)
+        elem = elem.Next
+        if not elem then break end
+    end
+
+    local changes = {}
+    for _, tevent in pairs(tevents) do
+        local deltaText = nil
+        if tevent.EventType == TEXT_EVENT.INSERT then deltaText = "" end
+
+        for _, delta in userdataIterator(tevent.Deltas) do
+            -- didChange in "insert mode" start and end should be the same in the json message!
+            if deltaText == nil then delta.End = -delta.Start end
+            table.insert(changes, {
+                range = LSPRange.fromDelta(delta),
+                text = deltaText or util.String(delta.Text)
+            })
+        end
+    end
+
+    for _, client in pairs(activeConnections) do
+        client:didChange(bp.Buf, changes)
+    end
+    return true
+end
+
+function preRedo(bp)
+    if next(activeConnections) == nil then return true end
+
+    local tevents = {}
+    local stack = bp.Buf.RedoStack
+    local elem = stack.Top
+    if not elem or not elem.Value then return true end
+
+    local tev = elem.Value
+    local startTime = tev.Time:UnixNano() / go_time.Millisecond
+    local endTime = startTime - (startTime % UNDO_THRESHOLD) + UNDO_THRESHOLD
+    for _ = 0, stack:Len() do
+        tev = elem.Value
+        if (tev.Time:UnixNano() / go_time.Millisecond) > endTime then break end
+        table.insert(tevents, tev)
+        elem = elem.Next
+        if not elem then break end
+    end
+
+    local changes = {}
+    for _, tevent in pairs(tevents) do
+        local deltaText = nil
+        if tevent.EventType == TEXT_EVENT.INSERT then deltaText = "" end
+
+        for _, delta in userdataIterator(tevent.Deltas) do
+            -- didChange in "insert mode" start and end should be the same in the json message
+            if deltaText == nil then delta.End = -delta.Start end
+            table.insert(changes, {
+                range = LSPRange.fromDelta(delta),
+                text = deltaText or util.String(delta.Text)
+            })
+        end
+    end
+
+    for _, client in pairs(activeConnections) do
+        client:didChange(bp.Buf, changes)
+    end
+    return true
+end
+
 
 
 -- HELPER FUNCTIONS
