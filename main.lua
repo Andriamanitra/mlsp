@@ -8,6 +8,7 @@ local util = import("micro/util")
 local go_os = import("os")
 local go_strings = import("strings")
 local go_time = import("time")
+local filepath = import("path/filepath")
 
 local settings = settings
 local json = json
@@ -1166,12 +1167,16 @@ function absPathFromFileUri(uri)
 end
 
 function relPathFromFileUri(uri)
-    local absPath = absPathFromFileUri(uri)
-    local cwd, err = go_os.Getwd()
-    if err ~= nil then -- in case of error return absPath
-        return absPath
-    end
-    return "." .. string.sub(absPath, #cwd + 1, #absPath)
+    local uriPath = absPathFromFileUri(uri)
+    local absPath, err = filepath.Abs(uriPath)
+    if err then return absPath end
+
+    local cwd
+    cwd, err = go_os.Getwd()
+    if err then return absPath end
+
+    -- +1 (slash after cwd) +1 (next position)
+    return string.sub(absPath, #cwd + 2, #absPath)
 end
 
 function openFileAtLoc(filepath, loc)
@@ -1218,7 +1223,6 @@ function getLineContentFromPath(filepath, line)
     return lineContent or "ERROR: invalid line " .. tostring(line)
 end
 
-
 -- takes Location[] https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#location
 -- and renders them to user
 function showLocations(newBufferTitle, lspLocations, labels)
@@ -1244,7 +1248,6 @@ function showLocations(newBufferTitle, lspLocations, labels)
     newBuffer.Type.Readonly = true
     micro.CurPane():HSplitBuf(newBuffer)
 end
-
 
 function findBufPaneByPath(fpath)
     if fpath == nil then return nil end
