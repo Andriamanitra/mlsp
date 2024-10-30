@@ -278,13 +278,6 @@ function LSPClient:handleResponseError(method, error)
     end
 end
 
-function showHoverInfo(results)
-    local bf = buffer.NewBuffer(results, "[µlsp] hover")
-    bf.Type.Scratch = true
-    bf.Type.Readonly = true
-    micro.CurPane():HSplitIndex(bf, true)
-end
-
 function LSPClient:handleResponseResult(method, result)
     if method == "initialize" then
         self.serverCapabilities = result.capabilities
@@ -304,7 +297,14 @@ function LSPClient:handleResponseResult(method, result)
         -- FIXME: iterate over *all* currently open buffers
         onBufferOpen(micro.CurPane().Buf)
     elseif method == "textDocument/hover" then
-        -- result.contents being a string or array is deprecated but as of 2023
+        local showHoverInfo = function (results)
+            local bf = buffer.NewBuffer(results, "[µlsp] hover")
+            bf.Type.Scratch = true
+            bf.Type.Readonly = true
+            micro.CurPane():HSplitIndex(bf, true)
+        end
+		
+	-- result.contents being a string or array is deprecated but as of 2023
         -- * pylsp still responds with {"contents": ""} for no results
         -- * lua-lsp still responds with {"contents": []} for no results
         if result == nil or result.contents == "" or table.empty(result.contents) then
