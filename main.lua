@@ -960,9 +960,10 @@ function onCursorRight(bufpane)    clearAutocomplete() end
 function onCursorStart(bufpane)    clearAutocomplete() end
 function onCursorEnd(bufpane)      clearAutocomplete() end
 
-local TEXT_EVENT = {INSERT = 1, REMOVE = -1}
+local TEXT_EVENT = {INSERT = 1, REMOVE = -1, REPLACE = 0}
 local UNDO_THRESHOLD = 1000
 
+-- Emulates Micro's Undo() in `internal/buffer/eventhandler.go`
 function preUndo(bp)
     if next(activeConnections) == nil then return true end
 
@@ -1003,6 +1004,7 @@ function preUndo(bp)
     return true
 end
 
+-- Emulates Micro's Redo() in `internal/buffer/eventhandler.go`
 function preRedo(bp)
     if next(activeConnections) == nil then return true end
 
