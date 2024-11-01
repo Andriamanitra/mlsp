@@ -8,6 +8,7 @@ local util = import("micro/util")
 local go_os = import("os")
 local go_strings = import("strings")
 local go_time = import("time")
+local filepath = import("path/filepath")
 
 local settings = settings
 local json = json
@@ -298,15 +299,22 @@ function LSPClient:handleResponseResult(method, result)
         -- FIXME: iterate over *all* currently open buffers
         onBufferOpen(micro.CurPane().Buf)
     elseif method == "textDocument/hover" then
-        -- result.contents being a string or array is deprecated but as of 2023
+        local showHoverInfo = function (results)
+            local bf = buffer.NewBuffer(results, "[µlsp] hover")
+            bf.Type.Scratch = true
+            bf.Type.Readonly = true
+            micro.CurPane():HSplitIndex(bf, true)
+        end
+		
+	-- result.contents being a string or array is deprecated but as of 2023
         -- * pylsp still responds with {"contents": ""} for no results
         -- * lua-lsp still responds with {"contents": []} for no results
         if result == nil or result.contents == "" or table.empty(result.contents) then
             infobar("no hover results")
         elseif type(result.contents) == "string" then
-            infobar(result.contents)
+            showHoverInfo(result.contents)
         elseif type(result.contents.value) == "string" then
-            infobar(result.contents.value)
+            showHoverInfo(result.contents.value)
         else
             infobar("WARNING: ignored textDocument/hover result due to unrecognized format")
         end
@@ -1203,6 +1211,19 @@ function absPathFromFileUri(uri)
     end
 end
 
+function relPathFromFileUri(uri)
+    local uriPath = absPathFromFileUri(uri)
+    local absPath, err = filepath.Abs(uriPath)
+    if err then return absPath end
+
+    local cwd
+    cwd, err = go_os.Getwd()
+    if err then return absPath end
+
+    -- +1 (slash after cwd) +1 (next position)
+    return string.sub(absPath, #cwd + 2, #absPath)
+end
+
 function openFileAtLoc(filepath, loc)
     local bp = micro.CurPane()
 
@@ -1232,17 +1253,37 @@ function openFileAtLoc(filepath, loc)
     bp:Center()
 end
 
+function getLineContentFromPath(filepath, line)
+    local f = io.open(filepath, "rb")
+    if not f then return "ERROR: could not open " .. filepath end
+
+    local cnt = 0
+    local lineContent
+    repeat
+        lineContent = f:read("*l")
+        cnt = cnt + 1
+    until not lineContent or cnt == line
+    f:close()
+
+    return lineContent or "ERROR: invalid line " .. tostring(line)
+end
+
 -- takes Location[] https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#location
 -- and renders them to user
 function showLocations(newBufferTitle, lspLocations, labels)
     local bufContents = ""
     for i, lspLoc in ipairs(lspLocations) do
-        local fpath = absPathFromFileUri(lspLoc.uri)
+        local fpath = relPathFromFileUri(lspLoc.uri)
         local lineNumber = lspLoc.range.start.line + 1
         local columnNumber = lspLoc.range.start.character + 1
-        local line = string.format("%s:%d:%d\n", fpath, lineNumber, columnNumber)
-        if labels ~= nil then
-            line = labels[i] .. "\t" .. line
+
+        local line
+        if labels ~= nil then -- document symbols
+            line = string.format("%s:%d:%d: %s\n", fpath, lineNumber, columnNumber, labels[i])
+        else -- references
+            local lineContent, err = getLineContentFromPath(fpath, lineNumber)
+            if err ~= nil then lineContent = string.format("ERROR: %s\n", tostring(err)) end
+            line = string.format("%s:%d:%d:%s\n", fpath, lineNumber, columnNumber, lineContent)
         end
         bufContents = bufContents .. line
     end
