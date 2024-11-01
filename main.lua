@@ -975,12 +975,12 @@ function onRedo(bp)
     return handleUndosRedos(bp.Buf, bp.Buf.UndoStack.Top, numRedos)
 end
 
-function handleUndosRedos(buf, elem, numUndos)
+function handleUndosRedos(buf, elem, numChanges)
     if next(activeConnections) == nil then return end
 
     local TEXT_EVENT = {INSERT = 1, REMOVE = -1, REPLACE = 0}
     local tevents = {}
-    for i = 1, numUndos do
+    for i = 1, numChanges do
         table.insert(tevents, elem.Value)
         elem = elem.Next
     end
