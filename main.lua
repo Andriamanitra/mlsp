@@ -455,7 +455,7 @@ function LSPClient:handleResponseResult(method, result)
             -- instead of SymbolInformation[]
             if sym.location == nil then
                 table.insert(symbolLocations, {
-                    uri = micro.CurPane().Buf.Path,
+                    uri = micro.CurPane().Buf.AbsPath,
                     range = sym.range
                 })
             else
