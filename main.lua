@@ -17,6 +17,7 @@ function init()
     config.MakeCommand("lsp", startServer, config.NoComplete)
     config.MakeCommand("lsp-stop", stopServers, config.NoComplete)
     config.MakeCommand("lsp-showlog", showLog, config.NoComplete)
+    config.MakeCommand("lsp-sync-document", function (bp) syncFullDocument(bp.Buf) end, config.NoComplete)
     config.MakeCommand("hover", hoverAction, config.NoComplete)
     config.MakeCommand("format", formatAction, config.NoComplete)
     config.MakeCommand("autocomplete", completionAction, config.NoComplete)
@@ -34,6 +35,7 @@ local allConnections = {}
 setmetatable(allConnections, { __index = function (_, k) return activeConnections[k] end })
 local docBuffers = {}
 local lastAutocompletion = -1
+local undoStackLengthBefore = 0
 
 local LSPClient = {}
 LSPClient.__index = LSPClient
@@ -931,7 +933,7 @@ function onBeforeTextEvent(buf, tevent)
     end
 end
 
-function fullyUpdate(buf)
+function syncFullDocument(buf)
     if next(activeConnections) == nil then return end
 
     clearAutocomplete()
@@ -957,9 +959,52 @@ function onCursorRight(bufpane)    clearAutocomplete() end
 function onCursorStart(bufpane)    clearAutocomplete() end
 function onCursorEnd(bufpane)      clearAutocomplete() end
 
-function onUndo(bp) fullyUpdate(bp.Buf) end
-function onRedo(bp) fullyUpdate(bp.Buf) end
+function preUndo(bp)
+    undoStackLengthBefore = bp.Buf.UndoStack:Len()
+end
+function onUndo(bp)
+    local numUndos = undoStackLengthBefore - bp.Buf.UndoStack:Len()
+    return handleUndosRedos(bp.Buf, bp.Buf.RedoStack.Top, numUndos)
+end
 
+function preRedo(bp)
+    undoStackLengthBefore = bp.Buf.UndoStack:Len()
+end
+function onRedo(bp)
+    local numRedos = bp.Buf.UndoStack:Len() - undoStackLengthBefore
+    return handleUndosRedos(bp.Buf, bp.Buf.UndoStack.Top, numRedos)
+end
+
+function handleUndosRedos(buf, elem, numChanges)
+    if next(activeConnections) == nil then return end
+
+    local TEXT_EVENT = {INSERT = 1, REMOVE = -1, REPLACE = 0}
+    local tevents = {}
+    for i = 1, numChanges do
+        table.insert(tevents, elem.Value)
+        elem = elem.Next
+    end
+
+    local changes = {}
+    for i = 1, #tevents do
+        local tev = tevents[#tevents + 1 - i]
+        for _, delta in userdataIterator(tev.Deltas) do
+            local text = ""
+            local range = LSPRange.fromDelta(delta)
+
+            if tev.EventType == TEXT_EVENT.INSERT then
+                range["end"] = range["start"]
+                text = util.String(delta.Text)
+            end
+
+            table.insert(changes, { range = range, text = text })
+        end
+    end
+
+    for _, client in pairs(activeConnections) do
+    	client:didChange(buf, changes)
+    end
+end
 
 -- HELPER FUNCTIONS
 
@@ -1051,7 +1096,7 @@ function editBuf(buf, textedits)
     local newCursorLoc = buffer.Loc(0, 0):Move(cursorByteOffset, buf)
     buf:GetActiveCursor():GotoLoc(newCursorLoc)
 
-    fullyUpdate(buf)
+    syncFullDocument(buf)
 end
 
 function severityToString(severity)
