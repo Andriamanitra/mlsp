@@ -1212,16 +1212,13 @@ function absPathFromFileUri(uri)
 end
 
 function relPathFromFileUri(uri)
-    local uriPath = absPathFromFileUri(uri)
-    local absPath, err = filepath.Abs(uriPath)
+    local absPath = absPathFromFileUri(uri)
+    local cwd, err = go_os.Getwd()
     if err then return absPath end
-
-    local cwd
-    cwd, err = go_os.Getwd()
+    local relPath
+    relPath, err = filepath.Rel(cwd, absPath)
     if err then return absPath end
-
-    -- +1 (slash after cwd) +1 (next position)
-    return string.sub(absPath, #cwd + 2, #absPath)
+    return relPath
 end
 
 function openFileAtLoc(filepath, loc)
