@@ -398,7 +398,7 @@ function LSPClient:handleResponseResult(method, result)
             infobar("No references found")
             return
         end
-        showLocations("references", result)
+        showReferenceLocations("references", result)
     elseif
         method == "textDocument/declaration" or
         method == "textDocument/definition" or
@@ -473,7 +473,7 @@ function LSPClient:handleResponseResult(method, result)
             end
             table.insert(symbolLabels, string.format("[%s]\t%s", SYMBOLKINDS[sym.kind], sym.name))
         end
-        showLocations("document symbols", symbolLocations, symbolLabels)
+        showSymbolLocations("document symbols", symbolLocations, symbolLabels)
     else
         log("WARNING: dunno what to do with response to", method)
     end
@@ -1267,29 +1267,112 @@ end
 
 -- takes Location[] https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#location
 -- and renders them to user
-function showLocations(newBufferTitle, lspLocations, labels)
-    local bufContents = ""
+function showSymbolLocations(newBufferTitle, lspLocations, labels)
+    local symbols = {}
+    local maxLabelLen = 0
     for i, lspLoc in ipairs(lspLocations) do
-        local fpath = relPathFromFileUri(lspLoc.uri)
+        local fpath = absPathFromFileUri(lspLoc.uri)
         local lineNumber = lspLoc.range.start.line + 1
         local columnNumber = lspLoc.range.start.character + 1
+        --FIXME does not handle well \t
+        -- local labelLen = util.CharacterCountInString(labels[i])
+        local labelLen = #labels[i]
+        symbols[i] = {
+            label = labels[i],
+            location = string.format("%s:%d:%d\n", fpath, lineNumber, columnNumber)
+        }
+        if maxLabelLen < labelLen then maxLabelLen = labelLen end
+    end
 
-        local line
-        if labels ~= nil then -- document symbols
-            line = string.format("%s:%d:%d: %s\n", fpath, lineNumber, columnNumber, labels[i])
-        else -- references
-            local lineContent, err = getLineContentFromPath(fpath, lineNumber)
-            if err ~= nil then lineContent = string.format("ERROR: %s\n", tostring(err)) end
-            line = string.format("%s:%d:%d:%s\n", fpath, lineNumber, columnNumber, lineContent)
-        end
-        bufContents = bufContents .. line
+    local bufContents = ""
+    local format = "%-" .. maxLabelLen .. "s# %s"
+    for _, sym in ipairs(symbols) do
+        bufContents = bufContents .. string.format(format, sym.label, sym.location)
     end
 
     local newBuffer = buffer.NewBuffer(bufContents, newBufferTitle)
     newBuffer.Type.Scratch = true
     newBuffer.Type.Readonly = true
+    --We enforce tabs, dont annoy users
+    newBuffer.Settings["hltaberrors"] = false
     micro.CurPane():HSplitBuf(newBuffer)
 end
+
+-- takes Location[] https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#location
+-- and renders them to user
+function showReferenceLocations(newBufferTitle, lspLocations)
+    local references = {}
+    for i, lspLoc in ipairs(lspLocations) do
+        local fpath = absPathFromFileUri(lspLoc.uri)
+        local lineNumber = lspLoc.range.start.line + 1
+        local columnNumber = lspLoc.range.start.character + 1
+        local line = string.format("%s:%d:%d\n", fpath, lineNumber, columnNumber)
+        references[i] = {
+            path = fpath,
+            line = lineNumber,
+            column = columnNumber,
+        }
+    end
+
+    table.sort(references, function(a, b)
+        if a.path < b.path then return true
+        elseif a.path > b.path then return false
+        else
+            if a.line < b.line then return true
+            elseif a.line > b.line then return false
+            else
+                if a.column < b.column then return true
+                elseif a.column > b.column then return false
+                else return true end
+            end
+        end
+    end)
+
+    local bufContents = ""
+    local curFile = nil
+    local file = nil
+    local lineCount = 0
+    local prevLine = 0
+    local lineContent
+    for _, ref in ipairs(references) do
+        repeat -- fake-goto to use break as continue
+            if curFile == ref.path and prevLine == ref.line then break -- Same line? add it directly
+            elseif curFile ~= ref.path then --Handle file opening and closing
+                if file then file:close() end
+                curFile = ref.path
+                if bufContents ~= "" then bufContents = bufContents .. "\n" end
+                bufContents = bufContents .. curFile .. ":\n"
+                lineCount = 0
+                file = io.open(curFile, "rb")
+                if not file then
+                    lineContent = ""
+                    break
+                end
+            end
+
+            repeat
+                lineContent = file:read("*l")
+                lineCount = lineCount + 1
+            until not lineContent or lineCount == ref.line
+            ---Empty string: line not found
+            lineContent = lineContent and lineContent or ""
+
+        until true
+        bufContents = bufContents .. string.format("\t%d:%d:%s\n",ref.line, ref.column, lineContent)
+        prevLine = ref.line
+    end
+
+    if file then file:close() end -- last iteration does not close last file
+
+    local newBuffer = buffer.NewBuffer(bufContents, newBufferTitle)
+    newBuffer.Type.Scratch = true
+    newBuffer.Type.Readonly = true
+    --We enforce tabs, dont annoy users
+    newBuffer.Settings["hltaberrors"] = false
+    micro.CurPane():HSplitBuf(newBuffer)
+    -- TODO use the reference to search in the buffer so the results are highlighted?
+end
+
 
 function findBufPaneByPath(fpath)
     if fpath == nil then return nil end
