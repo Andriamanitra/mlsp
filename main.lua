@@ -1294,16 +1294,9 @@ function showReferenceLocations(newBufferTitle, lspLocations)
     end
 
     table.sort(references, function(a, b)
-        if a.path < b.path then return true
-        elseif a.path > b.path then return false
-        else
-            if a.line < b.line then return true
-            elseif a.line > b.line then return false
-            else
-                if a.column < b.column then return true
-                elseif a.column > b.column then return false
-                else return true end
-            end
+        if a.path ~= b.path then return a.path < b.path end
+        if a.line ~= b.line then return a.line < b.line end
+        return a.column < b.column
         end
     end)
 
