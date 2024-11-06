@@ -1300,43 +1300,35 @@ function showReferenceLocations(newBufferTitle, lspLocations)
         end
     end)
 
-    local bufContents = ""
-    local curFile = nil
+    local bufLines = {}
+    local curFilePath = ""
     local file = nil
     local lineCount = 0
-    local prevLine = 0
-    local lineContent
+    local lineContent = ""
     for _, ref in ipairs(references) do
-        repeat -- fake-goto to use break as continue
-            if curFile == ref.path and prevLine == ref.line then break -- Same line? add it directly
-            elseif curFile ~= ref.path then --Handle file opening and closing
-                if file then file:close() end
-                curFile = ref.path
-                if bufContents ~= "" then bufContents = bufContents .. "\n" end
-                bufContents = bufContents .. curFile .. ":\n"
-                lineCount = 0
-                file = io.open(curFile, "rb")
-                if not file then
-                    lineContent = ""
-                    break
-                end
-            end
+        if curFilePath ~= ref.path then
+            if file then file:close() end
+            if #bufLines > 0 then table.insert(bufLines, "") end
+            curFilePath = ref.path
+            table.insert(bufLines, curFilePath)
+            file = io.open(curFilePath, "rb")
+            lineCount = 0
+        end
 
-            repeat
+        -- file can be nil if io.open failed
+        if file ~= nil then
+            while lineCount < ref.line do
                 lineContent = file:read("*l")
                 lineCount = lineCount + 1
-            until not lineContent or lineCount == ref.line
-            ---Empty string: line not found
-            lineContent = lineContent and lineContent or ""
-
-        until true
-        bufContents = bufContents .. string.format("\t%d:%d:%s\n",ref.line, ref.column, lineContent)
-        prevLine = ref.line
+            end
+        end
+        table.insert(bufLines, string.format("\t%d:%d:%s", ref.line, ref.column, lineContent or ""))
     end
 
     if file then file:close() end -- last iteration does not close last file
+    table.insert(bufLines, "")
 
-    local newBuffer = buffer.NewBuffer(bufContents, newBufferTitle)
+    local newBuffer = buffer.NewBuffer(table.concat(bufLines, "\n"), newBufferTitle)
     newBuffer.Type.Scratch = true
     newBuffer.Type.Readonly = true
     --We enforce tabs, dont annoy users
