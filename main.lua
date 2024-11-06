@@ -8,6 +8,7 @@ local util = import("micro/util")
 local go_os = import("os")
 local go_strings = import("strings")
 local go_time = import("time")
+local filepath = import("path/filepath")
 
 local settings = settings
 local json = json
@@ -298,15 +299,22 @@ function LSPClient:handleResponseResult(method, result)
         -- FIXME: iterate over *all* currently open buffers
         onBufferOpen(micro.CurPane().Buf)
     elseif method == "textDocument/hover" then
+        local showHoverInfo = function (results)
+            local bf = buffer.NewBuffer(results, "[µlsp] hover")
+            bf.Type.Scratch = true
+            bf.Type.Readonly = true
+            micro.CurPane():HSplitIndex(bf, true)
+        end
+
         -- result.contents being a string or array is deprecated but as of 2023
         -- * pylsp still responds with {"contents": ""} for no results
         -- * lua-lsp still responds with {"contents": []} for no results
         if result == nil or result.contents == "" or table.empty(result.contents) then
             infobar("no hover results")
         elseif type(result.contents) == "string" then
-            infobar(result.contents)
+            showHoverInfo(result.contents)
         elseif type(result.contents.value) == "string" then
-            infobar(result.contents.value)
+            showHoverInfo(result.contents.value)
         else
             infobar("WARNING: ignored textDocument/hover result due to unrecognized format")
         end
@@ -390,7 +398,7 @@ function LSPClient:handleResponseResult(method, result)
             infobar("No references found")
             return
         end
-        showLocations("references", result)
+        showReferenceLocations("references", result)
     elseif
         method == "textDocument/declaration" or
         method == "textDocument/definition" or
@@ -463,9 +471,9 @@ function LSPClient:handleResponseResult(method, result)
             else
                 table.insert(symbolLocations, sym.location)
             end
-            table.insert(symbolLabels, string.format("[%s]\t%s", SYMBOLKINDS[sym.kind], sym.name))
+            table.insert(symbolLabels, string.format("%-15s %s", "["..SYMBOLKINDS[sym.kind].."]", sym.name))
         end
-        showLocations("document symbols", symbolLocations, symbolLabels)
+        showSymbolLocations("document symbols", symbolLocations, symbolLabels)
     else
         log("WARNING: dunno what to do with response to", method)
     end
@@ -1203,6 +1211,15 @@ function absPathFromFileUri(uri)
     end
 end
 
+function relPathFromAbsPath(absPath)
+    local cwd, err = go_os.Getwd()
+    if err then return absPath end
+    local relPath
+    relPath, err = filepath.Rel(cwd, absPath)
+    if err then return absPath end
+    return relPath
+end
+
 function openFileAtLoc(filepath, loc)
     local bp = micro.CurPane()
 
@@ -1234,22 +1251,88 @@ end
 
 -- takes Location[] https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#location
 -- and renders them to user
-function showLocations(newBufferTitle, lspLocations, labels)
-    local bufContents = ""
+function showSymbolLocations(newBufferTitle, lspLocations, labels)
+    local symbols = {}
+    local maxLabelLen = 0
     for i, lspLoc in ipairs(lspLocations) do
         local fpath = absPathFromFileUri(lspLoc.uri)
         local lineNumber = lspLoc.range.start.line + 1
         local columnNumber = lspLoc.range.start.character + 1
-        local line = string.format("%s:%d:%d\n", fpath, lineNumber, columnNumber)
-        if labels ~= nil then
-            line = labels[i] .. "\t" .. line
-        end
-        bufContents = bufContents .. line
+        local labelLen = #labels[i]
+        symbols[i] = {
+            label = labels[i],
+            location = string.format("%s:%d:%d\n", fpath, lineNumber, columnNumber)
+        }
+        if maxLabelLen < labelLen then maxLabelLen = labelLen end
+    end
+
+    local bufContents = ""
+    local format = "%-" .. maxLabelLen .. "s # %s"
+    for _, sym in ipairs(symbols) do
+        bufContents = bufContents .. string.format(format, sym.label, sym.location)
     end
 
     local newBuffer = buffer.NewBuffer(bufContents, newBufferTitle)
     newBuffer.Type.Scratch = true
     newBuffer.Type.Readonly = true
+    micro.CurPane():HSplitBuf(newBuffer)
+end
+
+-- takes Location[] https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#location
+-- and renders them to user
+function showReferenceLocations(newBufferTitle, lspLocations)
+    local references = {}
+    for i, lspLoc in ipairs(lspLocations) do
+        local fpath = absPathFromFileUri(lspLoc.uri)
+        local lineNumber = lspLoc.range.start.line + 1
+        local columnNumber = lspLoc.range.start.character + 1
+        references[i] = {
+            path = fpath,
+            line = lineNumber,
+            column = columnNumber,
+        }
+    end
+
+    table.sort(references, function(a, b)
+        if a.path ~= b.path then return a.path < b.path end
+        if a.line ~= b.line then return a.line < b.line end
+        return a.column < b.column
+        end
+    end)
+
+    local bufLines = {}
+    local curFilePath = ""
+    local file = nil
+    local lineCount = 0
+    local lineContent = ""
+    for _, ref in ipairs(references) do
+        if curFilePath ~= ref.path then
+            if file then file:close() end
+            if #bufLines > 0 then table.insert(bufLines, "") end
+            curFilePath = ref.path
+            table.insert(bufLines, curFilePath)
+            file = io.open(curFilePath, "rb")
+            lineCount = 0
+        end
+
+        -- file can be nil if io.open failed
+        if file ~= nil then
+            while lineCount < ref.line do
+                lineContent = file:read("*l")
+                lineCount = lineCount + 1
+            end
+        end
+        table.insert(bufLines, string.format("\t%d:%d:%s", ref.line, ref.column, lineContent or ""))
+    end
+
+    if file then file:close() end -- last iteration does not close last file
+    table.insert(bufLines, "")
+
+    local newBuffer = buffer.NewBuffer(table.concat(bufLines, "\n"), newBufferTitle)
+    newBuffer.Type.Scratch = true
+    newBuffer.Type.Readonly = true
+    --We enforce tabs, dont annoy users
+    newBuffer.Settings["hltaberrors"] = false
     micro.CurPane():HSplitBuf(newBuffer)
 end
 
