@@ -471,7 +471,7 @@ function LSPClient:handleResponseResult(method, result)
             else
                 table.insert(symbolLocations, sym.location)
             end
-            table.insert(symbolLabels, string.format("[%s]\t%s", SYMBOLKINDS[sym.kind], sym.name))
+            table.insert(symbolLabels, string.format("%-15s %s", "["..SYMBOLKINDS[sym.kind].."]", sym.name))
         end
         showSymbolLocations("document symbols", symbolLocations, symbolLabels)
     else
