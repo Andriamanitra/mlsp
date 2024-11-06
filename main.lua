@@ -305,8 +305,8 @@ function LSPClient:handleResponseResult(method, result)
             bf.Type.Readonly = true
             micro.CurPane():HSplitIndex(bf, true)
         end
-		
-	-- result.contents being a string or array is deprecated but as of 2023
+
+        -- result.contents being a string or array is deprecated but as of 2023
         -- * pylsp still responds with {"contents": ""} for no results
         -- * lua-lsp still responds with {"contents": []} for no results
         if result == nil or result.contents == "" or table.empty(result.contents) then
@@ -1211,8 +1211,7 @@ function absPathFromFileUri(uri)
     end
 end
 
-function relPathFromFileUri(uri)
-    local absPath = absPathFromFileUri(uri)
+function relPathFromAbsPath(absPath)
     local cwd, err = go_os.Getwd()
     if err then return absPath end
     local relPath
@@ -1250,21 +1249,6 @@ function openFileAtLoc(filepath, loc)
     bp:Center()
 end
 
-function getLineContentFromPath(filepath, line)
-    local f = io.open(filepath, "rb")
-    if not f then return "ERROR: could not open " .. filepath end
-
-    local cnt = 0
-    local lineContent
-    repeat
-        lineContent = f:read("*l")
-        cnt = cnt + 1
-    until not lineContent or cnt == line
-    f:close()
-
-    return lineContent or "ERROR: invalid line " .. tostring(line)
-end
-
 -- takes Location[] https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#location
 -- and renders them to user
 function showSymbolLocations(newBufferTitle, lspLocations, labels)
@@ -1274,8 +1258,6 @@ function showSymbolLocations(newBufferTitle, lspLocations, labels)
         local fpath = absPathFromFileUri(lspLoc.uri)
         local lineNumber = lspLoc.range.start.line + 1
         local columnNumber = lspLoc.range.start.character + 1
-        --FIXME does not handle well \t
-        -- local labelLen = util.CharacterCountInString(labels[i])
         local labelLen = #labels[i]
         symbols[i] = {
             label = labels[i],
@@ -1285,7 +1267,7 @@ function showSymbolLocations(newBufferTitle, lspLocations, labels)
     end
 
     local bufContents = ""
-    local format = "%-" .. maxLabelLen .. "s# %s"
+    local format = "%-" .. maxLabelLen .. "s # %s"
     for _, sym in ipairs(symbols) do
         bufContents = bufContents .. string.format(format, sym.label, sym.location)
     end
@@ -1293,8 +1275,6 @@ function showSymbolLocations(newBufferTitle, lspLocations, labels)
     local newBuffer = buffer.NewBuffer(bufContents, newBufferTitle)
     newBuffer.Type.Scratch = true
     newBuffer.Type.Readonly = true
-    --We enforce tabs, dont annoy users
-    newBuffer.Settings["hltaberrors"] = false
     micro.CurPane():HSplitBuf(newBuffer)
 end
 
@@ -1306,7 +1286,6 @@ function showReferenceLocations(newBufferTitle, lspLocations)
         local fpath = absPathFromFileUri(lspLoc.uri)
         local lineNumber = lspLoc.range.start.line + 1
         local columnNumber = lspLoc.range.start.character + 1
-        local line = string.format("%s:%d:%d\n", fpath, lineNumber, columnNumber)
         references[i] = {
             path = fpath,
             line = lineNumber,
@@ -1370,9 +1349,7 @@ function showReferenceLocations(newBufferTitle, lspLocations)
     --We enforce tabs, dont annoy users
     newBuffer.Settings["hltaberrors"] = false
     micro.CurPane():HSplitBuf(newBuffer)
-    -- TODO use the reference to search in the buffer so the results are highlighted?
 end
-
 
 function findBufPaneByPath(fpath)
     if fpath == nil then return nil end
