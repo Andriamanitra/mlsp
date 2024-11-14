@@ -182,15 +182,13 @@ function LSPClient:initialize(server)
     client.openFiles = {}
     client.onInitialized = server.onInitialized
 
-    log(string.format("Starting '%s' with args", server.cmd), server.args)
-
     -- the last parameter(s) to JobSpawn are userargs which get passed down to
     -- the callback functions (onStdout, onStderr, onExit)
     client.job = shell.JobSpawn(server.cmd, server.args, onStdout, onStderr, onExit, clientId)
-
     if client.job.Err ~= nil then
-        infobar(string.format("Error: %s", client.job.Err:Error()))
+        return
     end
+    log(string.format("Started '%s' with args", server.cmd), server.args)
 
     local wd, _ = go_os.Getwd()
     local rootUri = string.format("file://%s", wd:uriEncode())
@@ -227,6 +225,7 @@ function LSPClient:stop()
             docBuf:ClearMessages(self.clientId)
         end
     end
+    log("stopped", self.clientId)
     shell.JobStop(self.job)
 end
 
@@ -809,10 +808,21 @@ end
 
 function onExit(text, userargs)
     local clientId = userargs[1]
+    local client = allConnections[clientId]
+    if client then
+        local reasonMsg
+        if client.job.Err ~= nil then -- LookPath error
+            reasonMsg = string.format("%s exited (%s)", clientId, client.job.Err:Error())
+        elseif client.job.ProcessState ~= nil then
+            reasonMsg = string.format("%s exited (%s)", clientId, client.job.ProcessState:String())
+        else
+            reasonMsg = string.format("%s exited", clientId)
+        end
+        log(reasonMsg)
+        infobar(reasonMsg)
+    end
     activeConnections[clientId] = nil
     allConnections[clientId] = nil
-    log(clientId, "exited")
-    infobar(clientId .. " exited")
 end
 
 function onBufferOpen(buf)
