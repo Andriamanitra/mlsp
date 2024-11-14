@@ -1297,7 +1297,6 @@ function showReferenceLocations(newBufferTitle, lspLocations)
         if a.path ~= b.path then return a.path < b.path end
         if a.line ~= b.line then return a.line < b.line end
         return a.column < b.column
-        end
     end)
 
     local bufLines = {}
