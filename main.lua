@@ -13,24 +13,6 @@ local filepath = import("path/filepath")
 local settings = settings
 local json = json
 
-function init()
-    micro.SetStatusInfoFn("mlsp.status")
-    config.MakeCommand("lsp", startServer, config.NoComplete)
-    config.MakeCommand("lsp-stop", stopServers, config.NoComplete)
-    config.MakeCommand("lsp-showlog", showLog, config.NoComplete)
-    config.MakeCommand("lsp-sync-document", function (bp) syncFullDocument(bp.Buf) end, config.NoComplete)
-    config.MakeCommand("hover", hoverAction, config.NoComplete)
-    config.MakeCommand("format", formatAction, config.NoComplete)
-    config.MakeCommand("autocomplete", completionAction, config.NoComplete)
-    config.MakeCommand("goto-definition", gotoAction("definition"), config.NoComplete)
-    config.MakeCommand("goto-declaration", gotoAction("declaration"), config.NoComplete)
-    config.MakeCommand("goto-typedefinition", gotoAction("typeDefinition"), config.NoComplete)
-    config.MakeCommand("goto-implementation", gotoAction("implementation"), config.NoComplete)
-    config.MakeCommand("find-references", findReferencesAction, config.NoComplete)
-    config.MakeCommand("document-symbols", documentSymbolsAction, config.NoComplete)
-    config.MakeCommand("diagnostic-info", openDiagnosticBufferAction, config.NoComplete)
-end
-
 local activeConnections = {}
 local allConnections = {}
 setmetatable(allConnections, { __index = function (_, k) return activeConnections[k] end })
@@ -89,6 +71,8 @@ function startServer(bufpane, argsUserdata)
         table.insert(args, a)
     end
 
+    local _ = table.remove(args, 1) -- ignore `start` argument
+
     local server
     if next(args) ~= nil then
         local cmd = table.remove(args, 1)
@@ -111,7 +95,7 @@ function startServer(bufpane, argsUserdata)
 end
 
 function stopServers(bufpane, argsUserdata)
-    local hasArgs, name = pcall(function() return argsUserdata[1] end)
+    local hasArgs, name = pcall(function() return argsUserdata[2] end)
 
     local stoppedClients = {}
     if not hasArgs then -- stop all
@@ -128,7 +112,7 @@ function stopServers(bufpane, argsUserdata)
 end
 
 function showLog(bufpane, args)
-    local hasArgs, name = pcall(function() return args[1] end)
+    local hasArgs, name = pcall(function() return args[2] end)
 
     for _, client in pairs(activeConnections) do
         if not hasArgs or client.name == name then
@@ -1365,4 +1349,72 @@ function userdataIterator(data)
         local success, item = pcall(function() return data[idx] end)
         if success then return idx, item end
     end
+end
+
+local LSPCmds = {
+    ["start"] = startServer,
+    ["stop"] = stopServers,
+    ["showlog"] = showLog,
+    ["sync-document"] = function (bp) syncFullDocument(bp.Buf) end,
+    ["hover"] = hoverAction,
+    ["format"] = formatAction,
+    ["autocomplete"] = completionAction,
+    ["goto-definition"] = gotoAction("definition"),
+    ["goto-declaration"] = gotoAction("declaration"),
+    ["goto-typedefinition"] = gotoAction("typeDefinition"),
+    ["goto-implementation"] = gotoAction("implementation"),
+    ["find-references"] = findReferencesAction,
+    ["document-symbols"] = documentSymbolsAction,
+    ["diagnostic-info"] = openDiagnosticBufferAction,
+}
+
+local function lspCompleter(buf)
+    local opts = {}
+
+    --Do NOT autocomplete after first argument
+    local args = go_strings.Split(buf:Line(0), " ")
+    if #args > 2 then return nil, nil end
+
+    for k, _ in pairs(LSPCmds) do table.insert(opts, k) end
+    table.sort(opts)
+
+    --NOTE assumes no unicode in plugin's options
+    local suggestions = {}
+    local completions = {}
+    local lastArg = args[#args]
+
+    for i=1,#opts do
+        local opt = opts[i]
+        local optPrefix = string.sub(opt, 1, #lastArg)
+
+        if optPrefix > lastArg then break end
+
+        local startIdx, endIdx = string.find(opt, lastArg, 1, true)
+        if endIdx and startIdx == 1 then
+            local completion = string.sub(opt, endIdx + 1, #opt)
+            table.insert(completions, completion)
+            table.insert(suggestions, opt)
+        end
+    end
+
+    return completions, suggestions
+end
+
+function LSPEntryPoint(bp, args)
+    if #args == 0 then
+        startServer(bp, args)
+        return
+    end
+    local opt = args[1]
+    local cmd = LSPCmds[opt]
+    if not cmd then
+        micro.InfoBar():Error(string.format("[µlsp]: Unknown command: '%s'", opt))
+        return
+    end
+    cmd(bp, args)
+end
+
+function init()
+    micro.SetStatusInfoFn("mlsp.status")
+    config.MakeCommand("lsp", LSPEntryPoint, lspCompleter)
 end
