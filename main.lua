@@ -64,15 +64,7 @@ function status(buf)
     end
 end
 
-function startServer(bufpane, argsUserdata)
-
-    local args = {}
-    for _, a in userdataIterator(argsUserdata) do
-        table.insert(args, a)
-    end
-
-    local _ = table.remove(args, 1) -- ignore `start` argument
-
+function startServer(bufpane, args)
     local server
     if next(args) ~= nil then
         local cmd = table.remove(args, 1)
@@ -94,8 +86,8 @@ function startServer(bufpane, argsUserdata)
     LSPClient:initialize(server)
 end
 
-function stopServers(bufpane, argsUserdata)
-    local hasArgs, name = pcall(function() return argsUserdata[2] end)
+function stopServers(bufpane, args)
+    local hasArgs, name = pcall(function() return args[1] end)
 
     local stoppedClients = {}
     if not hasArgs then -- stop all
@@ -112,7 +104,7 @@ function stopServers(bufpane, argsUserdata)
 end
 
 function showLog(bufpane, args)
-    local hasArgs, name = pcall(function() return args[2] end)
+    local hasArgs, name = pcall(function() return args[1] end)
 
     for _, client in pairs(activeConnections) do
         if not hasArgs or client.name == name then
@@ -1351,7 +1343,8 @@ function userdataIterator(data)
     end
 end
 
-local LSPCmds = {
+--Option's order is hardcoded
+local LSP_CMDS = {
     ["start"] = startServer,
     ["stop"] = stopServers,
     ["showlog"] = showLog,
@@ -1375,20 +1368,14 @@ local function lspCompleter(buf)
     local args = go_strings.Split(buf:Line(0), " ")
     if #args > 2 then return nil, nil end
 
-    for k, _ in pairs(LSPCmds) do table.insert(opts, k) end
-    table.sort(opts)
+    for k, _ in pairs(LSP_CMDS) do table.insert(opts, k) end
 
-    --NOTE assumes no unicode in plugin's options
     local suggestions = {}
     local completions = {}
     local lastArg = args[#args]
 
     for i=1,#opts do
         local opt = opts[i]
-        local optPrefix = string.sub(opt, 1, #lastArg)
-
-        if optPrefix > lastArg then break end
-
         local startIdx, endIdx = string.find(opt, lastArg, 1, true)
         if endIdx and startIdx == 1 then
             local completion = string.sub(opt, endIdx + 1, #opt)
@@ -1400,17 +1387,24 @@ local function lspCompleter(buf)
     return completions, suggestions
 end
 
-function LSPEntryPoint(bp, args)
-    if #args == 0 then
-        startServer(bp, args)
+function LSPEntryPoint(bp, argsUserdata)
+    if #argsUserdata == 0 then
+        startServer(bp, {})
         return
     end
-    local opt = args[1]
-    local cmd = LSPCmds[opt]
+    local opt = argsUserdata[1]
+    local cmd = LSP_CMDS[opt]
     if not cmd then
         micro.InfoBar():Error(string.format("[µlsp]: Unknown command: '%s'", opt))
         return
     end
+
+    local args = {}
+    for _, a in userdataIterator(argsUserdata) do table.insert(args, a) end
+    if opt == "start" or opt == "stop" or opt == "showlog" then
+        table.remove(args, 1)
+    end
+
     cmd(bp, args)
 end
 
