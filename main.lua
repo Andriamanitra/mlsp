@@ -1377,7 +1377,7 @@ local function lspCompleter(buf)
     for i=1,#opts do
         local opt = opts[i]
         local startIdx, endIdx = string.find(opt, lastArg, 1, true)
-        if endIdx and startIdx == 1 then
+        if startIdx == 1 then
             local completion = string.sub(opt, endIdx + 1, #opt)
             table.insert(completions, completion)
             table.insert(suggestions, opt)
