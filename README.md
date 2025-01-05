@@ -23,34 +23,34 @@ programming languages you want to use.
 
 The plugin currently provides following commands:
 
-- `lsp deno lsp` starts a language server by executing command `deno lsp`.
-  Without arguments the `lsp` command will try to guess the right server by
+- `lsp start deno lsp` starts a language server by executing command `deno lsp`.
+  Without arguments the `lsp start` command will try to guess the right server by
   looking at the currently open filetype.
-- `lsp-stop deno` stops the language server with name `deno`. Without arguments
-  the `lsp-stop` command will stop _all_ currently running language servers.
-- `hover` shows hover information for the code under cursor.
-- `format` formats the buffer that is currently open.
-- `autocomplete` for code completion suggestions. PROTIP: If you wish to use the
+- `lsp stop deno` stops the language server with name `deno`. Without arguments
+  the `lsp stop` command will stop _all_ currently running language servers.
+- `lsp hover` shows hover information for the code under cursor.
+- `lsp format` formats the buffer that is currently open.
+- `lsp autocomplete` for code completion suggestions. PROTIP: If you wish to use the
   same key as micro's autocompletion (tab by default), enable `tabAutocomplete`
   in `config.lua` instead of binding `command:autocomplete` to a key!
-- `goto-definition` – open the definition for the symbol under cursor
-- `goto-declaration` – open the declaration for the symbol under cursor
-- `goto-typedefinition` – open the type definition for the symbol under cursor
-- `goto-implementation` – open the implementation for the symbol under cursor
-- `find-references` - find all references to the symbol under cursor (shows the results in a new pane)
-- `document-symbols` - list all symbols in the current document
-- `diagnostic-info` - show more information about a diagnostic on the current line (useful for multiline diagnostic messages)
+- `lsp goto-definition` – open the definition for the symbol under cursor
+- `lsp goto-declaration` – open the declaration for the symbol under cursor
+- `lsp goto-typedefinition` – open the type definition for the symbol under cursor
+- `lsp goto-implementation` – open the implementation for the symbol under cursor
+- `lsp find-references` - find all references to the symbol under cursor (shows the results in a new pane)
+- `lsp document-symbols` - list all symbols in the current document
+- `lsp diagnostic-info` - show more information about a diagnostic on the current line (useful for multiline diagnostic messages)
 
 You can type the commands on micro command prompt or bind them to keys by adding
 something like this to your `bindings.json`:
 
 ```json
 {
-  "F7": "command:lsp",
-  "F8": "command:format",
-  "Alt-h": "command:hover",
-  "Alt-d": "command:goto-definition",
-  "Alt-r": "command:find-references"
+  "F7": "command:lsp start",
+  "F8": "command:lsp format",
+  "Alt-h": "command:lsp hover",
+  "Alt-d": "command:lsp goto-definition",
+  "Alt-r": "command:lsp find-references"
 }
 ```
 
@@ -70,7 +70,7 @@ something like this to your `bindings.json`:
 - [x] list document symbols
 - [ ] rename symbol
 - [ ] code actions
-- [ ] incremental document synchronization (better performance when editing large files)
+- [x] incremental document synchronization (better performance when editing large files)
 - [ ] [suggest a feature](https://github.com/Andriamanitra/mlsp/issues/new)
 
 
