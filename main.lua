@@ -226,6 +226,7 @@ function LSPClient:stop()
         end
     end
     log("stopped", self.clientId)
+    infobar(self.clientId .. " stopped")
     shell.JobStop(self.job)
 end
 
