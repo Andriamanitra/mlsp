@@ -56,6 +56,9 @@ languageServer = {
     lualsp = {
         cmd = "lua-lsp"
     },
+    luals = {
+        cmd = "lua-language-server"
+    },
     pylsp = {
         cmd = "pylsp"
     },
@@ -132,7 +135,7 @@ settings = {
         javascript = languageServer.deno,
         julia      = languageServer.julials,
         json       = languageServer.deno,
-        lua        = languageServer.lualsp,
+        lua        = languageServer.luals,
         markdown   = languageServer.deno,
         python     = languageServer.pylsp,
         ruby       = languageServer.rubylsp,
