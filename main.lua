@@ -13,6 +13,77 @@ local filepath = import("path/filepath")
 local settings = settings
 local json = json
 
+--Option's order is hardcoded
+local LSP_CMDS = {
+    ["start"]               = function(bp,args) startServer(bp, args) end,
+    ["stop"]                = function(bp,args) stopServers(bp, args) end,
+    ["showlog"]             = function(bp,args) showLog(bp, args) end,
+    ["sync-document"]       = function(bp,_) syncFullDocument(bp.Buf) end,
+    ["hover"]               = function(bp,_) hoverAction(bp) end,
+    ["format"]              = function(bp,_) formatAction(bp) end,
+    ["autocomplete"]        = function(bp,_) completionAction(bp) end,
+    ["goto-definition"]     = function(bp,_) gotoAction("definition")(bp) end,
+    ["goto-declaration"]    = function(bp,_) gotoAction("declaration")(bp) end,
+    ["goto-typedefinition"] = function(bp,_) gotoAction("typeDefinition")(bp) end,
+    ["goto-implementation"] = function(bp,_) gotoAction("implementation")(bp) end,
+    ["find-references"]     = function(bp,_) findReferencesAction(bp) end,
+    ["document-symbols"]    = function(bp,_) documentSymbolsAction(bp) end,
+    ["diagnostic-info"]     = function(bp,_) openDiagnosticBufferAction(bp) end,
+}
+
+function lspCompleter(buf)
+    local opts = {}
+
+    --Do NOT autocomplete after first argument
+    local args = go_strings.Split(buf:Line(0), " ")
+    if #args > 2 then return nil, nil end
+
+    for k, _ in pairs(LSP_CMDS) do table.insert(opts, k) end
+
+    local suggestions = {}
+    local completions = {}
+    local lastArg = args[#args]
+
+    for i=1,#opts do
+        local opt = opts[i]
+        local startIdx, endIdx = string.find(opt, lastArg, 1, true)
+        if startIdx == 1 then
+            local completion = string.sub(opt, endIdx + 1, #opt)
+            table.insert(completions, completion)
+            table.insert(suggestions, opt)
+        end
+    end
+
+    return completions, suggestions
+end
+
+function LSPEntryPoint(bp, argsUserdata)
+    if #argsUserdata == 0 then
+        startServer(bp, {})
+        return
+    end
+    local opt = argsUserdata[1]
+    local cmd = LSP_CMDS[opt]
+    if not cmd then
+        micro.InfoBar():Error(string.format("[µlsp]: Unknown command: '%s'", opt))
+        return
+    end
+
+    local args = {}
+    for _, a in userdataIterator(argsUserdata) do table.insert(args, a) end
+    if opt == "start" or opt == "stop" or opt == "showlog" then
+        table.remove(args, 1)
+    end
+
+    cmd(bp, args)
+end
+
+function init()
+    micro.SetStatusInfoFn("mlsp.status")
+    config.MakeCommand("lsp", LSPEntryPoint, lspCompleter)
+end
+
+
 local activeConnections = {}
 local allConnections = {}
 setmetatable(allConnections, { __index = function (_, k) return activeConnections[k] end })
@@ -1341,74 +1412,4 @@ function userdataIterator(data)
         local success, item = pcall(function() return data[idx] end)
         if success then return idx, item end
     end
-end
-
---Option's order is hardcoded
-local LSP_CMDS = {
-    ["start"] = startServer,
-    ["stop"] = stopServers,
-    ["showlog"] = showLog,
-    ["sync-document"] = function (bp) syncFullDocument(bp.Buf) end,
-    ["hover"] = hoverAction,
-    ["format"] = formatAction,
-    ["autocomplete"] = completionAction,
-    ["goto-definition"] = gotoAction("definition"),
-    ["goto-declaration"] = gotoAction("declaration"),
-    ["goto-typedefinition"] = gotoAction("typeDefinition"),
-    ["goto-implementation"] = gotoAction("implementation"),
-    ["find-references"] = findReferencesAction,
-    ["document-symbols"] = documentSymbolsAction,
-    ["diagnostic-info"] = openDiagnosticBufferAction,
-}
-
-local function lspCompleter(buf)
-    local opts = {}
-
-    --Do NOT autocomplete after first argument
-    local args = go_strings.Split(buf:Line(0), " ")
-    if #args > 2 then return nil, nil end
-
-    for k, _ in pairs(LSP_CMDS) do table.insert(opts, k) end
-
-    local suggestions = {}
-    local completions = {}
-    local lastArg = args[#args]
-
-    for i=1,#opts do
-        local opt = opts[i]
-        local startIdx, endIdx = string.find(opt, lastArg, 1, true)
-        if startIdx == 1 then
-            local completion = string.sub(opt, endIdx + 1, #opt)
-            table.insert(completions, completion)
-            table.insert(suggestions, opt)
-        end
-    end
-
-    return completions, suggestions
-end
-
-function LSPEntryPoint(bp, argsUserdata)
-    if #argsUserdata == 0 then
-        startServer(bp, {})
-        return
-    end
-    local opt = argsUserdata[1]
-    local cmd = LSP_CMDS[opt]
-    if not cmd then
-        micro.InfoBar():Error(string.format("[µlsp]: Unknown command: '%s'", opt))
-        return
-    end
-
-    local args = {}
-    for _, a in userdataIterator(argsUserdata) do table.insert(args, a) end
-    if opt == "start" or opt == "stop" or opt == "showlog" then
-        table.remove(args, 1)
-    end
-
-    cmd(bp, args)
-end
-
-function init()
-    micro.SetStatusInfoFn("mlsp.status")
-    config.MakeCommand("lsp", LSPEntryPoint, lspCompleter)
 end
