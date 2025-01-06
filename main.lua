@@ -147,7 +147,7 @@ function showLog(bufpane, args)
         return
     end
 
-    local title = string.format("Log for '%s' (%s)", foundClient.name, foundClient.clientId)
+    local title = string.format("[µlsp] Log for '%s' (%s)", foundClient.name, foundClient.clientId)
     local newBuffer = buffer.NewBuffer(foundClient.stderr, title)
 
     newBuffer:SetOption("filetype", "text")
@@ -226,6 +226,7 @@ function LSPClient:stop()
         end
     end
     log("stopped", self.clientId)
+    infobar(self.clientId .. " stopped")
     shell.JobStop(self.job)
 end
 
@@ -397,7 +398,7 @@ function LSPClient:handleResponseResult(method, result)
             infobar("No references found")
             return
         end
-        showReferenceLocations("references", result)
+        showReferenceLocations("[µlsp] references", result)
     elseif
         method == "textDocument/declaration" or
         method == "textDocument/definition" or
@@ -472,7 +473,7 @@ function LSPClient:handleResponseResult(method, result)
             end
             table.insert(symbolLabels, string.format("%-15s %s", "["..SYMBOLKINDS[sym.kind].."]", sym.name))
         end
-        showSymbolLocations("document symbols", symbolLocations, symbolLabels)
+        showSymbolLocations("[µlsp] document symbols", symbolLocations, symbolLabels)
     else
         log("WARNING: dunno what to do with response to", method)
     end
@@ -772,7 +773,7 @@ function openDiagnosticBufferAction(bufpane)
                     diagnostic.severity and severityToString(diagnostic.severity) or "-",
                     diagnostic.message
                 )
-                local bufTitle = string.format("%s diagnostics #%d", client.clientId, idx)
+                local bufTitle = string.format("[µlsp] %s diagnostics #%d", client.clientId, idx)
                 local newBuffer = buffer.NewBuffer(bufContents, bufTitle)
                 newBuffer.Type.Readonly = true
                 local height = bufpane:GetView().Height
@@ -828,7 +829,8 @@ end
 function onBufferOpen(buf)
     if buf.Type.Kind ~= buffer.BTDefault then return end
     if buf:FileType() == "unknown" then return end
-
+    -- Ignore buffers created by clients
+    if string.startsWith(buf:GetName(), "[µlsp]") then return end
 
     local filePath = buf.AbsPath
 
