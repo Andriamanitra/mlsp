@@ -53,6 +53,9 @@ languageServer = {
         cmd = "julia",
         args = {"--startup-file=no", "--history-file=no", "-e", "using LanguageServer; runserver()"}
     },
+    lualsp = {
+        cmd = "lua-lsp"
+    },
     luals = {
         cmd = "lua-language-server"
     },
