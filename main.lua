@@ -829,7 +829,8 @@ end
 function onBufferOpen(buf)
     if buf.Type.Kind ~= buffer.BTDefault then return end
     if buf:FileType() == "unknown" then return end
-
+    -- Ignore buffers created by clients
+    if string.startsWith(buf:GetName(), "[µlsp]") then return end
 
     local filePath = buf.AbsPath
 
