@@ -27,7 +27,7 @@ function init()
         ["goto-implementation"] = gotoAction("implementation"),
         ["goto-typedefinition"] = gotoAction("typeDefinition"),
         ["hover"]               = hoverAction,
-        ["sync-document"]       = syncFullDocument,
+        ["sync-document"]       = function (bp) syncFullDocument(bp.Buf) end,
         ["autocomplete"]        = completionAction,
         ["showlog"]             = showLog,
     }
