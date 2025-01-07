@@ -32,7 +32,7 @@ The plugin currently provides following commands:
 - `lsp format` formats the buffer that is currently open.
 - `lsp autocomplete` for code completion suggestions. PROTIP: If you wish to use the
   same key as micro's autocompletion (tab by default), enable `tabAutocomplete`
-  in `config.lua` instead of binding `command:autocomplete` to a key!
+  in `config.lua` instead of binding `command:lsp autocomplete` to a key!
 - `lsp goto-definition` – open the definition for the symbol under cursor
 - `lsp goto-declaration` – open the declaration for the symbol under cursor
 - `lsp goto-typedefinition` – open the type definition for the symbol under cursor
