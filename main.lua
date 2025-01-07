@@ -1,4 +1,4 @@
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 
 local micro = import("micro")
 local config = import("micro/config")
@@ -14,21 +14,66 @@ local settings = settings
 local json = json
 
 function init()
+    -- ordering of the table affects the autocomplete suggestion order
+    local subcommands = {
+        ["start"]               = startServer,
+        ["stop"]                = stopServers,
+        ["diagnostic-info"]     = openDiagnosticBufferAction,
+        ["document-symbols"]    = documentSymbolsAction,
+        ["find-references"]     = findReferencesAction,
+        ["format"]              = formatAction,
+        ["goto-definition"]     = gotoAction("definition"),
+        ["goto-declaration"]    = gotoAction("declaration"),
+        ["goto-implementation"] = gotoAction("implementation"),
+        ["goto-typedefinition"] = gotoAction("typeDefinition"),
+        ["hover"]               = hoverAction,
+        ["sync-document"]       = function (bp) syncFullDocument(bp.Buf) end,
+        ["autocomplete"]        = completionAction,
+        ["showlog"]             = showLog,
+    }
+
+    local lspCompleter = function (buf)
+        -- Do NOT autocomplete after first argument
+        -- TODO: autocomplete "lsp start " and "lsp stop "
+        local args = go_strings.Split(buf:Line(0), " ")
+        if #args > 2 then return nil, nil end
+
+        local suggestions = {}
+        local completions = {}
+        local lastArg = args[#args]
+
+        for subcommand, _ in pairs(subcommands) do
+            local startIdx, endIdx = string.find(subcommand, lastArg, 1, true)
+            if startIdx == 1 then
+                local completion = string.sub(subcommand, endIdx + 1, #subcommand)
+                table.insert(completions, completion)
+                table.insert(suggestions, subcommand)
+            end
+        end
+
+        return completions, suggestions
+    end
+
+    local lspCommand = function(bp, argsUserdata)
+        local args = {}
+        for _, a in userdataIterator(argsUserdata) do table.insert(args, a) end
+
+        if #args == 0 then
+            startServer(bp, {})
+            return
+        end
+
+        local subcommand = table.remove(args, 1)
+        local func = subcommands[subcommand]
+        if func then
+            func(bp, args)
+        else
+            infobar(string.format("Unknown subcommand '%s'", subcommand))
+        end
+    end
+
     micro.SetStatusInfoFn("mlsp.status")
-    config.MakeCommand("lsp", startServer, config.NoComplete)
-    config.MakeCommand("lsp-stop", stopServers, config.NoComplete)
-    config.MakeCommand("lsp-showlog", showLog, config.NoComplete)
-    config.MakeCommand("lsp-sync-document", function (bp) syncFullDocument(bp.Buf) end, config.NoComplete)
-    config.MakeCommand("hover", hoverAction, config.NoComplete)
-    config.MakeCommand("format", formatAction, config.NoComplete)
-    config.MakeCommand("autocomplete", completionAction, config.NoComplete)
-    config.MakeCommand("goto-definition", gotoAction("definition"), config.NoComplete)
-    config.MakeCommand("goto-declaration", gotoAction("declaration"), config.NoComplete)
-    config.MakeCommand("goto-typedefinition", gotoAction("typeDefinition"), config.NoComplete)
-    config.MakeCommand("goto-implementation", gotoAction("implementation"), config.NoComplete)
-    config.MakeCommand("find-references", findReferencesAction, config.NoComplete)
-    config.MakeCommand("document-symbols", documentSymbolsAction, config.NoComplete)
-    config.MakeCommand("diagnostic-info", openDiagnosticBufferAction, config.NoComplete)
+    config.MakeCommand("lsp", lspCommand, lspCompleter)
 end
 
 local activeConnections = {}
@@ -82,13 +127,7 @@ function status(buf)
     end
 end
 
-function startServer(bufpane, argsUserdata)
-
-    local args = {}
-    for _, a in userdataIterator(argsUserdata) do
-        table.insert(args, a)
-    end
-
+function startServer(bufpane, args)
     local server
     if next(args) ~= nil then
         local cmd = table.remove(args, 1)
@@ -110,11 +149,9 @@ function startServer(bufpane, argsUserdata)
     LSPClient:initialize(server)
 end
 
-function stopServers(bufpane, argsUserdata)
-    local hasArgs, name = pcall(function() return argsUserdata[1] end)
-
-    local stoppedClients = {}
-    if not hasArgs then -- stop all
+function stopServers(bufpane, args)
+    local name = args[1]
+    if not name then -- stop all
         for clientId, client in pairs(activeConnections) do
             client:stop()
         end
