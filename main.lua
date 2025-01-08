@@ -22,6 +22,7 @@ function init()
         ["document-symbols"]    = documentSymbolsAction,
         ["find-references"]     = findReferencesAction,
         ["format"]              = formatAction,
+        ["rename"]              = renameAction,
         ["goto-definition"]     = gotoAction("definition"),
         ["goto-declaration"]    = gotoAction("declaration"),
         ["goto-implementation"] = gotoAction("implementation"),
@@ -551,6 +552,17 @@ function LSPClient:handleResponseResult(method, result)
             table.insert(symbolLabels, string.format("%-15s %s", "["..SYMBOLKINDS[sym.kind].."]", sym.name))
         end
         showSymbolLocations("[µlsp] document symbols", symbolLocations, symbolLabels)
+    elseif method == "textDocument/rename" then
+        if result == nil or table.empty(result) then
+            display_info("No change was required for renameAction")
+            return
+        end
+        if result.changes == nil or table.empty(result.changes) then
+            display_info("No changes received from client for renameAction")
+            return
+        end
+        -- TODO handle result.documentChanges
+        renameSymbol(result)
     else
         log("WARNING: dunno what to do with response to", method)
     end
@@ -803,6 +815,38 @@ function formatAction(bufpane)
                 options = formatOptions
             })
         end
+    end
+end
+
+function renameAction(bufpane, args)
+    local newName = ""
+
+    if #args > 0 then newName = args[1]
+    else -- `lsp rename`
+        local word = bufPaneGetSelectionOrWord(bufpane)
+        if not word then
+            local cursor = bufpane.Cursor
+            word = string.format("symbol at (%d:%d)", cursor.Y + 1, cursor.X + 1)
+        end
+
+        local prompt = "[µlsp] rename " .. word .. " with: "
+        micro.InfoBar():Prompt(prompt, "", "µlsp-rename-symbol", nil, function(str, canceled)
+            if not canceled then renameAction(bufpane, {str}) end
+        end)
+        return
+    end
+
+    bufpane.Cursor:Deselect(true)
+
+    local client = findClient(bufpane.Buf:FileType(), "renameProvider", "rename")
+    if client ~= nil then
+        local buf = bufpane.Buf
+        local cursor = buf:GetActiveCursor()
+        client:request("textDocument/rename", {
+            textDocument = client:textDocumentIdentifier(buf),
+            position = { line = cursor.Y, character = cursor.X },
+            newName = newName,
+        })
     end
 end
 
@@ -1102,6 +1146,13 @@ function handleUndosRedos(buf, elem, numChanges)
             if tev.EventType == TEXT_EVENT.INSERT then
                 range["end"] = range["start"]
                 text = util.String(delta.Text)
+            elseif tev.EventType == TEXT_EVENT.REPLACE then
+                -- mimics `ExecuteTextEvent()`: https://github.com/zyedidia/micro/blob/f49487dc3adf82ec5e63bf1b6c0ffaed268aa747/internal/buffer/eventhandler.go#L116
+                text = util.String(buf:Substr(-delta.Start, -delta.End))
+                range["end"] = {
+                    line = delta.Start.Y,
+                    character = delta.Start.X + util.CharacterCountInString(delta.Text)
+                }
             end
 
             table.insert(changes, { range = range, text = text })
@@ -1423,6 +1474,50 @@ function showReferenceLocations(newBufferTitle, lspLocations)
     --We enforce tabs, dont annoy users
     newBuffer.Settings["hltaberrors"] = false
     micro.CurPane():HSplitBuf(newBuffer)
+end
+
+function renameSymbol(results)
+    local changesToDeltas = function(deltas)
+        local ds = {}
+        for _, delta in ipairs(deltas) do
+            local text = delta.newText
+            local startLoc, endLoc = LSPRange.toLocs(delta.range)
+            table.insert(ds, { Text = text, Start = startLoc, End = endLoc })
+        end
+
+        -- sort Micro's deltas top to bottom and right to left
+        table.sort(ds, function (A, B)
+            local a, b = A.Start, B.Start
+            return a.Y < b.Y or (a.Y == b.Y and a.X > b.X)
+        end)
+
+        return ds
+    end
+
+    for fileUri, changes in pairs(results.changes) do
+        local absPath = absPathFromFileUri(fileUri)
+        local bufpane, _, _ = findBufPaneByPath(absPath)
+        if bufpane then
+            local deltas = changesToDeltas(changes)
+            bufpane.Buf:MultipleReplace(deltas)
+        end
+    end
+end
+
+function bufPaneGetSelectionOrWord(bufpane)
+    if bufpane.Cursor:HasSelection() then
+        return util.String(bufpane.Cursor:GetSelection())
+    else
+        local loc = -bufpane.Cursor.Loc
+
+        if util.IsWordChar(util.RuneAt(bufpane.Buf:LineBytes(loc.Y), loc.X)) then
+            bufpane.Cursor.Loc = loc
+            bufpane.Cursor:SelectWord()
+            return util.String(bufpane.Cursor:GetSelection())
+        else
+            return nil
+        end
+    end
 end
 
 function findBufPaneByPath(fpath)
