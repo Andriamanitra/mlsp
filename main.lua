@@ -68,7 +68,7 @@ function init()
         if func then
             func(bp, args)
         else
-            infobar(string.format("Unknown subcommand '%s'", subcommand))
+            display_error(string.format("Unknown subcommand '%s'", subcommand))
         end
     end
 
@@ -141,7 +141,7 @@ function startServer(bufpane, args)
         local ftype = bufpane.Buf:FileType()
         server = settings.defaultLanguageServer[ftype]
         if server == nil then
-            infobar(string.format("ERROR: no language server set up for file type '%s'", ftype))
+            display_error(string.format("No language server set up for file type '%s'", ftype))
             return
         end
     end
@@ -160,7 +160,7 @@ function stopServers(bufpane, args)
         activeConnections[name]:stop()
         activeConnections[name] = nil
     else
-        infobar(string.format("ERROR: unable to find active language server with name '%s'", name))
+        display_error(string.format("No active language server with name '%s'", name))
     end
 end
 
@@ -175,12 +175,12 @@ function showLog(bufpane, args)
     end
 
     if foundClient == nil then
-        infobar("no LSP client found")
+        display_info("No LSP client found")
         return
     end
 
     if foundClient.stderr == "" then
-        infobar(foundClient.clientId .. " has not written anything to stderr")
+        display_info(foundClient.clientId, " has not written anything to stderr")
         return
     end
 
@@ -198,7 +198,7 @@ function LSPClient:initialize(server)
     local clientId = server.shortName or server.cmd
 
     if allConnections[clientId] ~= nil then
-        infobar(string.format("%s is already running", clientId))
+        display_info(clientId, " is already running")
         return
     end
 
@@ -263,7 +263,7 @@ function LSPClient:stop()
         end
     end
     log("stopped", self.clientId)
-    infobar(self.clientId .. " stopped")
+    display_info(self.clientId, " stopped")
     shell.JobStop(self.job)
 end
 
@@ -310,7 +310,7 @@ function LSPClient:request(method, params)
 end
 
 function LSPClient:handleResponseError(method, error)
-    infobar(string.format("%s (Error %d, %s)", error.message, error.code, method))
+    display_error(string.format("%s (Error %d, %s)", error.message, error.code, method))
 
     if method == "textDocument/completion" then
         setCompletions({})
@@ -323,9 +323,9 @@ function LSPClient:handleResponseResult(method, result)
         if result.serverInfo then
             self.serverName = result.serverInfo.name
             self.serverVersion = result.serverInfo.version
-            infobar(string.format("Initialized %s version %s", self.serverName, self.serverVersion))
+            display_info(string.format("Initialized %s version %s", self.serverName, self.serverVersion))
         else
-            infobar(string.format("Initialized '%s' (no version information)", self.clientId))
+            display_info(string.format("Initialized '%s' (no version information)", self.clientId))
         end
         self:notification("initialized")
         activeConnections[self.clientId] = self
@@ -347,29 +347,29 @@ function LSPClient:handleResponseResult(method, result)
         -- * pylsp still responds with {"contents": ""} for no results
         -- * lua-lsp still responds with {"contents": []} for no results
         if result == nil or result.contents == "" or table.empty(result.contents) then
-            infobar("no hover results")
+            display_info("No hover results")
         elseif type(result.contents) == "string" then
             showHoverInfo(result.contents)
         elseif type(result.contents.value) == "string" then
             showHoverInfo(result.contents.value)
         else
-            infobar("WARNING: ignored textDocument/hover result due to unrecognized format")
+            display_info("WARNING: Ignored textDocument/hover result due to unrecognized format")
         end
     elseif method == "textDocument/formatting" then
         if result == nil or next(result) == nil then
-            infobar("formatted file (no changes)")
+            display_info("Formatted file (no changes)")
         else
             local textedits = result
             editBuf(micro.CurPane().Buf, textedits)
-            infobar("formatted file")
+            display_info("Formatted file")
         end
     elseif method == "textDocument/rangeFormatting" then
         if result == nil or next(result) == nil then
-            infobar("formatted selection (no changes)")
+            display_info("Formatted selection (no changes)")
         else
             local textedits = result
             editBuf(micro.CurPane().Buf, textedits)
-            infobar("formatted selection")
+            display_info("Formatted selection")
         end
     elseif method == "textDocument/completion" then
         -- TODO: handle result.isIncomplete = true somehow
@@ -382,7 +382,7 @@ function LSPClient:handleResponseResult(method, result)
         end
 
         if #completions == 0 then
-            infobar("no completions")
+            display_info("No completions")
             setCompletions({})
             return
         end
@@ -432,7 +432,7 @@ function LSPClient:handleResponseResult(method, result)
 
     elseif method == "textDocument/references" then
         if result == nil or table.empty(result) then
-            infobar("No references found")
+            display_info("No references found")
             return
         end
         showReferenceLocations("[µlsp] references", result)
@@ -444,7 +444,7 @@ function LSPClient:handleResponseResult(method, result)
     then
         -- result: Location | Location[] | LocationLink[] | null
         if result == nil or table.empty(result) then
-            infobar(string.format("%s not found", method:match("textDocument/(.*)$")))
+            display_info(string.format("%s not found", method:match("textDocument/(.*)$")))
         else
             -- FIXME: handle list of results properly
             -- if result is a list just take the first one
@@ -452,7 +452,7 @@ function LSPClient:handleResponseResult(method, result)
 
             -- FIXME: support LocationLink[]
             if result.targetRange ~= nil then
-                infobar("LocationLinks are not supported yet")
+                display_info("LocationLinks are not supported yet")
                 return
             end
 
@@ -464,7 +464,7 @@ function LSPClient:handleResponseResult(method, result)
         end
     elseif method == "textDocument/documentSymbol" then
         if result == nil or table.empty(result) then
-            infobar("No symbols found in current document")
+            display_info("No symbols found in current document")
             return
         end
         local symbolLocations = {}
@@ -542,7 +542,7 @@ function LSPClient:handleNotification(notification)
     elseif notification.method == "window/showMessage" then
         -- notification.params.type can be 1 = error, 2 = warning, 3 = info, 4 = log, 5 = debug
         if notification.params.type < 3 then
-            infobar(notification.params.message)
+            display_info(notification.params.message)
         end
     elseif notification.method == "window/logMessage" then
         -- TODO: somehow include these messages in `lsp-showlog`
@@ -668,8 +668,12 @@ function log(...)
     micro.Log("[µlsp]", unpack(arg))
 end
 
-function infobar(text)
-    micro.InfoBar():Message("[µlsp] " .. text:gsub("(%a)\n(%a)", "%1 / %2"):gsub("%s+", " "))
+function display_error(...)
+    micro.InfoBar():Error("[µlsp] ", unpack(arg))
+end
+
+function display_info(...)
+    micro.InfoBar():Message("[µlsp] ", unpack(arg))
 end
 
 
@@ -699,7 +703,7 @@ function formatAction(bufpane)
     end
 
     if #selectedRanges > 1 then
-        infobar("formatting multiple selections is not supported yet")
+        display_error("Formatting multiple selections is not supported yet")
         return
     end
 
@@ -822,7 +826,7 @@ function openDiagnosticBufferAction(bufpane)
         end
     end
     if not found then
-        infobar("found no diagnostics on current line")
+        display_info("Found no diagnostics on current line")
     end
 end
 
@@ -856,8 +860,8 @@ function onExit(text, userargs)
         else
             reasonMsg = string.format("%s exited", clientId)
         end
+        display_error(reasonMsg)
         log(reasonMsg)
-        infobar(reasonMsg)
     end
     activeConnections[clientId] = nil
     allConnections[clientId] = nil
@@ -1236,7 +1240,7 @@ end
 
 function findClientWithCapability(capabilityName, featureDescription)
     if next(activeConnections) == nil then
-        infobar("No language server is running! Try starting one with the `lsp` command.")
+        display_error("No language server is running! Try starting one with the `lsp` command.")
         return
     end
 
@@ -1246,7 +1250,7 @@ function findClientWithCapability(capabilityName, featureDescription)
         end
     end
     if featureDescription ~= nil then
-        infobar(string.format("None of the active language server(s) support %s", featureDescription))
+        display_error("None of the active language server(s) support ", featureDescription)
     end
     return nil
 end
@@ -1282,7 +1286,7 @@ function openFileAtLoc(filepath, loc)
     else
         local newBuf, err = buffer.NewBufferFromFile(filepath)
         if err ~= nil then
-            infobar(err)
+            display_error(err)
             return
         end
         bp:AddTab()
