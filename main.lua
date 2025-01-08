@@ -22,6 +22,7 @@ function init()
         ["document-symbols"]    = documentSymbolsAction,
         ["find-references"]     = findReferencesAction,
         ["format"]              = formatAction,
+        ["rename"]              = renameAction,
         ["goto-definition"]     = gotoAction("definition"),
         ["goto-declaration"]    = gotoAction("declaration"),
         ["goto-implementation"] = gotoAction("implementation"),
@@ -110,6 +111,21 @@ local LSPRange = {
     toLocs = function(range)
         local a, b = range["start"], range["end"]
         return buffer.Loc(a.character, a.line), buffer.Loc(b.character, b.line)
+    end,
+    toDeltas = function(deltas, textKey)
+        local ds = {}
+        for _, delta in ipairs(deltas) do
+            --TODO i dont know what returns LSP, same key for all?
+            local text = delta[textKey]
+            local toLocs = function(range)
+                local a, b = range["start"], range["end"]
+                return buffer.Loc(a.character, a.line),
+                       buffer.Loc(b.character, b.line)
+            end
+            local startLoc, endLoc = toLocs(delta.range)
+            table.insert(ds, { Text = text, Start = startLoc, End = endLoc })
+        end
+        return ds
     end
 }
 
@@ -511,6 +527,12 @@ function LSPClient:handleResponseResult(method, result)
             table.insert(symbolLabels, string.format("%-15s %s", "["..SYMBOLKINDS[sym.kind].."]", sym.name))
         end
         showSymbolLocations("[µlsp] document symbols", symbolLocations, symbolLabels)
+    elseif method == "textDocument/rename" then
+        if result == nil or table.empty(result) then
+            display_error("Invalid response for renameAction")
+            return
+        end
+        renameSymbol(result)
     else
         log("WARNING: dunno what to do with response to", method)
     end
@@ -736,6 +758,41 @@ function formatAction(bufpane)
             })
         end
     end
+end
+
+function renameAction(bufpane, args)
+    local newName = ""
+
+    if #args > 0 then newName = args[1]
+    else -- `lsp rename`
+        local word = bufPaneGetSelectionOrWord(bufpane)
+        if not word then
+            display_error("No word to rename under the cursor.")
+            return
+        end
+
+        local prompt = "[µlsp] rename " .. word .. " with: "
+        micro.InfoBar():Prompt(prompt, "", "µlsp", nil, function(str, canceled)
+            if not canceled then renameAction(bufpane, {str}) end
+        end)
+        return
+    end
+
+    bufpane.Cursor:ResetSelection()
+
+    local client = findClientWithCapability("renameProvider", "rename")
+    if not client then
+        display_error("No client for renameAction")
+        return
+    end
+
+    local buf = bufpane.Buf
+    local cursor = buf:GetActiveCursor()
+    client:request("textDocument/rename", {
+        textDocument = client:textDocumentIdentifier(buf),
+        position = { line = cursor.Y, character = cursor.X },
+        newName = newName,
+    })
 end
 
 function completionAction(bufpane)
@@ -1386,6 +1443,33 @@ function showReferenceLocations(newBufferTitle, lspLocations)
     --We enforce tabs, dont annoy users
     newBuffer.Settings["hltaberrors"] = false
     micro.CurPane():HSplitBuf(newBuffer)
+end
+
+function renameSymbol(results)
+    for fileUri, changes in pairs(results.changes) do
+        local absPath = absPathFromFileUri(fileUri)
+        local bufpane, _, _ = findBufPaneByPath(absPath)
+        if bufpane then
+            local deltas = LSPRange.toDeltas(changes, "newText")
+            bufpane.Buf:MultipleReplace(deltas)
+        end
+    end
+end
+
+function bufPaneGetSelectionOrWord(bufpane)
+    if bufpane.Cursor:HasSelection() then
+        return util.String(bufpane.Cursor:GetSelection())
+    else
+        local loc = -bufpane.Cursor.Loc
+
+        if util.IsWordChar(util.RuneAt(bufpane.Buf:LineBytes(loc.Y), loc.X)) then
+            bufpane.Cursor.Loc = loc
+            bufpane.Cursor:SelectWord()
+            return util.String(bufpane.Cursor:GetSelection())
+        else
+            return nil
+        end
+    end
 end
 
 function findBufPaneByPath(fpath)
