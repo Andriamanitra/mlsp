@@ -498,10 +498,10 @@ function LSPClient:handleResponseResult(method, result)
             end
 
             -- now result should be Location
-            local filepath = absPathFromFileUri(result.uri)
+            local fpath = absPathFromFileUri(result.uri)
             local startLoc, _ = LSPRange.toLocs(result.range)
 
-            openFileAtLoc(filepath, startLoc)
+            openFileAtLoc(fpath, startLoc)
         end
     elseif method == "textDocument/documentSymbol" then
         if result == nil or table.empty(result) then
@@ -1361,18 +1361,18 @@ function relPathFromAbsPath(absPath)
     return relPath
 end
 
-function openFileAtLoc(filepath, loc)
+function openFileAtLoc(fpath, loc)
     local bp = micro.CurPane()
 
     -- don't open a new tab if file is already open
-    local alreadyOpenPane, tabIdx, paneIdx = findBufPaneByPath(filepath)
+    local alreadyOpenPane, tabIdx, paneIdx = findBufPaneByPath(fpath)
 
     if alreadyOpenPane then
         micro.Tabs():SetActive(tabIdx)
         alreadyOpenPane:tab():SetActive(paneIdx)
         bp = alreadyOpenPane
     else
-        local newBuf, err = buffer.NewBufferFromFile(filepath)
+        local newBuf, err = buffer.NewBufferFromFile(fpath)
         if err ~= nil then
             display_error(err)
             return
