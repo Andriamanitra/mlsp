@@ -111,21 +111,6 @@ local LSPRange = {
     toLocs = function(range)
         local a, b = range["start"], range["end"]
         return buffer.Loc(a.character, a.line), buffer.Loc(b.character, b.line)
-    end,
-    toDeltas = function(deltas, textKey)
-        local ds = {}
-        for _, delta in ipairs(deltas) do
-            --TODO i dont know what returns LSP, same key for all?
-            local text = delta[textKey]
-            local toLocs = function(range)
-                local a, b = range["start"], range["end"]
-                return buffer.Loc(a.character, a.line),
-                       buffer.Loc(b.character, b.line)
-            end
-            local startLoc, endLoc = toLocs(delta.range)
-            table.insert(ds, { Text = text, Start = startLoc, End = endLoc })
-        end
-        return ds
     end
 }
 
@@ -529,9 +514,14 @@ function LSPClient:handleResponseResult(method, result)
         showSymbolLocations("[µlsp] document symbols", symbolLocations, symbolLabels)
     elseif method == "textDocument/rename" then
         if result == nil or table.empty(result) then
-            display_error("Invalid response for renameAction")
+            display_info("No change was required for renameAction")
             return
         end
+        if result.changes == nil or table.empty(result.changes) then
+            display_info("No changes received from client for renameAction")
+            return
+        end
+        -- TODO handle result.documentChanges
         renameSymbol(result)
     else
         log("WARNING: dunno what to do with response to", method)
@@ -767,12 +757,12 @@ function renameAction(bufpane, args)
     else -- `lsp rename`
         local word = bufPaneGetSelectionOrWord(bufpane)
         if not word then
-            display_error("No word to rename under the cursor.")
-            return
+            local cursor = bufpane.Cursor
+            word = string.format("symbol at (%d:%d)", cursor.Y + 1, cursor.X + 1)
         end
 
         local prompt = "[µlsp] rename " .. word .. " with: "
-        micro.InfoBar():Prompt(prompt, "", "µlsp", nil, function(str, canceled)
+        micro.InfoBar():Prompt(prompt, "", "µlsp-rename-symbol", nil, function(str, canceled)
             if not canceled then renameAction(bufpane, {str}) end
         end)
         return
@@ -781,18 +771,15 @@ function renameAction(bufpane, args)
     bufpane.Cursor:ResetSelection()
 
     local client = findClientWithCapability("renameProvider", "rename")
-    if not client then
-        display_error("No client for renameAction")
-        return
+    if client ~= nil then
+        local buf = bufpane.Buf
+        local cursor = buf:GetActiveCursor()
+        client:request("textDocument/rename", {
+            textDocument = client:textDocumentIdentifier(buf),
+            position = { line = cursor.Y, character = cursor.X },
+            newName = newName,
+        })
     end
-
-    local buf = bufpane.Buf
-    local cursor = buf:GetActiveCursor()
-    client:request("textDocument/rename", {
-        textDocument = client:textDocumentIdentifier(buf),
-        position = { line = cursor.Y, character = cursor.X },
-        newName = newName,
-    })
 end
 
 function completionAction(bufpane)
@@ -1446,11 +1433,21 @@ function showReferenceLocations(newBufferTitle, lspLocations)
 end
 
 function renameSymbol(results)
+    local changesToDeltas = function(deltas)
+        local ds = {}
+        for _, delta in ipairs(deltas) do
+            local text = delta.newText
+            local startLoc, endLoc = LSPRange.toLocs(delta.range)
+            table.insert(ds, { Text = text, Start = startLoc, End = endLoc })
+        end
+        return ds
+    end
+
     for fileUri, changes in pairs(results.changes) do
         local absPath = absPathFromFileUri(fileUri)
         local bufpane, _, _ = findBufPaneByPath(absPath)
         if bufpane then
-            local deltas = LSPRange.toDeltas(changes, "newText")
+            local deltas = changesToDeltas(changes)
             bufpane.Buf:MultipleReplace(deltas)
         end
     end
