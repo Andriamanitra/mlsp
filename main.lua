@@ -1100,6 +1100,12 @@ function handleUndosRedos(buf, elem, numChanges)
             if tev.EventType == TEXT_EVENT.INSERT then
                 range["end"] = range["start"]
                 text = util.String(delta.Text)
+            elseif tev.EventType == TEXT_EVENT.REPLACE then
+                text = util.String(buf:Substr(-delta.Start, -delta.End))
+                range["end"] = {
+                    line = delta.Start.Y,
+                    character = delta.Start.X + util.CharacterCountInString(delta.Text)
+                }
             end
 
             table.insert(changes, { range = range, text = text })
