@@ -74,6 +74,14 @@ function init()
 
     micro.SetStatusInfoFn("mlsp.status")
     config.MakeCommand("lsp", lspCommand, lspCompleter)
+
+    -- Enables settings configuration to be changed with set command, e.g. set lsp.error true/false while keeping user configured defaults
+    for key, value in pairs(settings.showDiagnostics) do
+    	config.RegisterCommonOption("lsp", key, value)
+    end
+
+    config.RegisterCommonOption("lsp",  "tabAutoComplete", settings.tabAutoComplete)
+    
 end
 
 local activeConnections = {}
