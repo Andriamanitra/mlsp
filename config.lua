@@ -10,6 +10,10 @@ local defaultLanguageServerOptions = {
     -- Arguments for the above command
     args = {},
 
+    -- List of filetypes supported by the server.
+    -- Defaults to accepting all filetypes if omitted.
+    filetypes = nil,
+
     -- Language server specific options that are sent to the server during
     -- initialization – you can usually omit this field
     initializationOptions = nil,
@@ -26,57 +30,72 @@ local defaultLanguageServerOptions = {
 -- Pre-made configurations for commonly used language servers – you can also
 -- define your own servers to be used in settings at the bottom of this file.
 -- See defaultLanguageServerOptions above for the available options.
+-- NOTE: filetypes depends on micro syntaxes
 languageServer = {
     clangd = {
-        cmd = "clangd"
+        cmd = "clangd",
+        filetypes = {"c", "cpp", "objc", "cuda", "proto"}
     },
     clojurelsp = {
-        cmd = "clojure-lsp"
+        cmd = "clojure-lsp",
+        filetypes = {"clojure"}
     },
     crystalline = {
-        cmd = "crystalline"
+        cmd = "crystalline",
+        filetypes = {"crystal"}
     },
     deno = {
         cmd = "deno",
-        args = {"lsp"}
+        args = {"lsp"},
+        filetypes = {"javascript", "typescript", "markdown", "json"}
     },
     gopls = {
-        cmd = "gopls"
+        cmd = "gopls",
+        filetypes = {"go", "gomod", "godoc"}
     },
     hls = {
         shortName = "hls",
         cmd = "haskell-language-server-wrapper",
-        args = {"--lsp"}
+        args = {"--lsp"},
+        filetypes = {"haskell"}
     },
     julials = {
         shortName = "julials",
         cmd = "julia",
-        args = {"--startup-file=no", "--history-file=no", "-e", "using LanguageServer; runserver()"}
+        args = {"--startup-file=no", "--history-file=no", "-e", "using LanguageServer; runserver()"},
+        filetypes = {"julia"}
     },
     lualsp = {
-        cmd = "lua-lsp"
+        cmd = "lua-lsp",
+        filetypes = {"lua"}
     },
     luals = {
-        cmd = "lua-language-server"
+        cmd = "lua-language-server",
+        filetypes = {"lua"}
     },
     pylsp = {
-        cmd = "pylsp"
+        cmd = "pylsp",
+        filetypes = {"python"}
     },
     pyright = {
         shortName = "pyright",
         cmd = "pyright-langserver",
-        args = {"--stdio"}
+        args = {"--stdio"},
+        filetypes = {"python"}
     },
     quicklintjs = {
         cmd = "quick-lint-js",
-        args = {"--lsp"}
+        args = {"--lsp"},
+        filetypes = {"javascript", "typescript"}
     },
     rubocop = {
         cmd = "rubocop",
-        args = {"--lsp"}
+        args = {"--lsp"},
+        filetypes = {"ruby"}
     },
     rubylsp = {
-        cmd = "ruby-lsp"
+        cmd = "ruby-lsp",
+        filetypes = {"ruby", "eruby"}
     },
     ruff = {
         cmd = "ruff",
@@ -84,18 +103,23 @@ languageServer = {
         onInitialized = function(client)
             -- does not give useful results
             client.serverCapabilities.hoverProvider = false
-        end
+        end,
+        filetypes = {"python"}
+
     },
     rustAnalyzer = {
         shortName = "rust",
-        cmd = "rust-analyzer"
+        cmd = "rust-analyzer",
+        filetypes = {"rust"}
     },
     solargraph = {
         cmd = "solargraph",
-        args = {"stdio"}
+        args = {"stdio"},
+        filetypes = {"ruby"}
     },
     zls = {
-        cmd = "zls"
+        cmd = "zls",
+        filetypes = {"zig"}
     }
 }
 
@@ -110,7 +134,7 @@ end
 settings = {
 
     -- Use LSP completion in place of micro's default Autocomplete action when
-    -- available (you can bind `command:autocomplete` command to a different
+    -- available (you can bind `command:lsp autocomplete` command to a different
     -- key in ~/.config/micro/bindings.json even if this setting is false)
     tabAutocomplete = false,
 

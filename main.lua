@@ -218,6 +218,7 @@ function LSPClient:initialize(server)
     client.sentRequests = {}
     client.openFiles = {}
     client.onInitialized = server.onInitialized
+    client.filetypes = server.filetypes
 
     -- the last parameter(s) to JobSpawn are userargs which get passed down to
     -- the callback functions (onStdout, onStderr, onExit)
@@ -307,6 +308,21 @@ function LSPClient:request(method, params)
     self.sentRequests[self.requestId] = method
     self.requestId = self.requestId + 1
     self:send(msg)
+end
+
+function LSPClient:supportsFiletype(filetype)
+    if self.filetypes == nil then return true end
+
+    for _, ftSupported in ipairs(self.filetypes) do
+        if ftSupported == filetype then
+            return true
+        end
+    end
+    return false
+end
+
+function LSPClient:hasCapability(capability)
+    return self.serverCapabilities[capability] ~= nil
 end
 
 function LSPClient:handleResponseError(method, error)
@@ -579,12 +595,21 @@ function LSPClient:didOpen(buf)
         return
     end
 
+    local filetype = buf:FileType()
+    -- NOTE: if we cancel didOpen then the rest of did*() are "cancelled"
+    -- by self.openFiles[filePath].
+    if self:supportsFiletype(filetype) == false then
+        log(string.format("'%s' doesn't support '%s' filetype. 'didOpen' cancelled for '%s'",
+                          self.clientId, filetype, buf:GetName()))
+        return
+    end
+
     local bufText = util.String(buf:Bytes())
     self.openFiles[filePath] = {
         version = 1,
         diagnostics = {}
     }
-    textDocument.languageId = buf:FileType()
+    textDocument.languageId = filetype
     textDocument.version = 1
     textDocument.text = bufText
 
@@ -610,10 +635,7 @@ function LSPClient:didChange(buf, changes)
     local textDocument = self:textDocumentIdentifier(buf)
     local filePath = buf.AbsPath
 
-    if self.openFiles[filePath] == nil then
-        log("ERROR: tried to emit didChange event for document that was not open")
-        return
-    end
+    if self.openFiles[filePath] == nil then return end
 
     local newVersion = self.openFiles[filePath].version + 1
 
@@ -628,7 +650,7 @@ end
 
 function LSPClient:didSave(buf)
     local textDocument = self:textDocumentIdentifier(buf)
-
+    if self.openFiles[buf.AbsPath] == nil then return end
     self:notification("textDocument/didSave", {
         textDocument = textDocument
     })
@@ -680,7 +702,7 @@ end
 
 -- USER TRIGGERED ACTIONS
 function hoverAction(bufpane)
-    local client = findClientWithCapability("hoverProvider", "hover information")
+    local client = findClient(bufpane.Buf:FileType(), "hoverProvider", "hover information")
     if client ~= nil then
         local buf = bufpane.Buf
         local cursor = buf:GetActiveCursor()
@@ -718,8 +740,9 @@ function formatAction(bufpane)
         trimFinalNewlines = true
     }
 
+    local filetype = bufpane.Buf:FileType()
     if #selectedRanges == 0 then
-        local client = findClientWithCapability("documentFormattingProvider", "formatting")
+        local client = findClient(filetype, "documentFormattingProvider", "formatting")
         if client ~= nil then
             client:request("textDocument/formatting", {
                 textDocument = client:textDocumentIdentifier(buf),
@@ -727,7 +750,7 @@ function formatAction(bufpane)
             })
         end
     else
-        local client = findClientWithCapability("documentRangeFormattingProvider", "formatting selections")
+        local client = findClient(filetype, "documentRangeFormattingProvider", "formatting selections")
         if client ~= nil then
             client:request("textDocument/rangeFormatting", {
                 textDocument = client:textDocumentIdentifier(buf),
@@ -739,7 +762,7 @@ function formatAction(bufpane)
 end
 
 function completionAction(bufpane)
-    local client = findClientWithCapability("completionProvider", "completion")
+    local client = findClient(bufpane.Buf:FileType(), "completionProvider", "completion")
     if client ~= nil then
         local buf = bufpane.Buf
         local cursor = buf:GetActiveCursor()
@@ -759,7 +782,7 @@ function gotoAction(kind)
     local requestMethod = string.format("textDocument/%s", kind)
 
     return function(bufpane)
-        local client = findClientWithCapability(cap, requestMethod)
+        local client = findClient(bufpane.Buf:FileType(), cap, requestMethod)
         if client ~= nil then
             local buf = bufpane.Buf
             local cursor = buf:GetActiveCursor()
@@ -772,7 +795,7 @@ function gotoAction(kind)
 end
 
 function findReferencesAction(bufpane)
-    local client = findClientWithCapability("referencesProvider", "finding references")
+    local client = findClient(bufpane.Buf:FileType(), "referencesProvider", "finding references")
     if client ~= nil then
         local buf = bufpane.Buf
         local cursor = buf:GetActiveCursor()
@@ -785,7 +808,7 @@ function findReferencesAction(bufpane)
 end
 
 function documentSymbolsAction(bufpane)
-    local client = findClientWithCapability("documentSymbolProvider", "document symbols")
+    local client = findClient(bufpane.Buf:FileType(), "documentSymbolProvider", "document symbols")
     if client ~= nil then
         local buf = bufpane.Buf
         client:request("textDocument/documentSymbol", {
@@ -801,30 +824,34 @@ function openDiagnosticBufferAction(bufpane)
     local found = false
 
     for _, client in pairs(activeConnections) do
-        local diagnostics = client.openFiles[filePath].diagnostics
-        for idx, diagnostic in pairs(diagnostics) do
-            local startLoc, endLoc = LSPRange.toLocs(diagnostic.range)
-            if cursor.Loc.Y == startLoc.Y then
-                found = true
-                local bufContents = string.format(
-                    "%s %s\nhref: %s\nseverity: %s\n\n%s",
-                    diagnostic.source or client.serverName or client.clientId,
-                    diagnostic.code or "(no error code)",
-                    diagnostic.codeDescription and diagnostic.codeDescription.href or "-",
-                    diagnostic.severity and severityToString(diagnostic.severity) or "-",
-                    diagnostic.message
-                )
-                local bufTitle = string.format("[µlsp] %s diagnostics #%d", client.clientId, idx)
-                local newBuffer = buffer.NewBuffer(bufContents, bufTitle)
-                newBuffer.Type.Readonly = true
-                local height = bufpane:GetView().Height
-                local newpane = micro.CurPane():HSplitBuf(newBuffer)
-                if height > 16 then
-                    bufpane:ResizePane(height - 8)
+        local file = client.openFiles[filePath]
+        if file then
+            local diagnostics = file.diagnostics
+            for idx, diagnostic in pairs(diagnostics) do
+                local startLoc, endLoc = LSPRange.toLocs(diagnostic.range)
+                if cursor.Loc.Y == startLoc.Y then
+                    found = true
+                    local bufContents = string.format(
+                        "%s %s\nhref: %s\nseverity: %s\n\n%s",
+                        diagnostic.source or client.serverName or client.clientId,
+                        diagnostic.code or "(no error code)",
+                        diagnostic.codeDescription and diagnostic.codeDescription.href or "-",
+                        diagnostic.severity and severityToString(diagnostic.severity) or "-",
+                        diagnostic.message
+                    )
+                    local bufTitle = string.format("[µlsp] %s diagnostics #%d", client.clientId, idx)
+                    local newBuffer = buffer.NewBuffer(bufContents, bufTitle)
+                    newBuffer.Type.Readonly = true
+                    local height = bufpane:GetView().Height
+                    local newpane = micro.CurPane():HSplitBuf(newBuffer)
+                    if height > 16 then
+                        bufpane:ResizePane(height - 8)
+                    end
                 end
             end
         end
     end
+
     if not found then
         display_info("Found no diagnostics on current line")
     end
@@ -933,7 +960,7 @@ function preAutocomplete(bufpane)
     -- use micro's own autocompleter if there is no LSP connection
     if next(activeConnections) == nil then return end
     if not settings.tabAutocomplete then return end
-    if findClientWithCapability("completionProvider") == nil then return end
+    if findClient(bufpane.Buf:FileType(), "completionProvider") == nil then return end
 
     -- "[µlsp] no autocompletions" message can be confusing if it does
     -- not get cleared before falling back to micro's own completion
@@ -1238,19 +1265,28 @@ function setCompletions(completions)
     end
 end
 
-function findClientWithCapability(capabilityName, featureDescription)
+-- Always returns the first match that makes true the condition.
+function findClient(filetype, capability, capabilityDescription)
     if next(activeConnections) == nil then
         display_error("No language server is running! Try starting one with the `lsp` command.")
         return
     end
 
     for _, client in pairs(activeConnections) do
-        if client.serverCapabilities[capabilityName] then
+        if client.filetypes ~= nil
+        and client:supportsFiletype(filetype)
+        and client:hasCapability(capability) then
             return client
         end
     end
-    if featureDescription ~= nil then
-        display_error("None of the active language server(s) support ", featureDescription)
+
+    -- If no client supports the file type, return the first one that has the capability.
+    for _, client in pairs(activeConnections) do
+        if client:hasCapability(capability) then return client end
+    end
+
+    if capabilityDescription then
+        display_error("None of the active language server(s) support ", capabilityDescription)
     end
     return nil
 end
