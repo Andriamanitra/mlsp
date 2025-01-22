@@ -977,6 +977,7 @@ end
 
 function onBeforeTextEvent(buf, tevent)
     if next(activeConnections) == nil then return end
+    if buf.Type.Kind ~= buffer.BTDefault then return end
 
     local changes = {}
     for _, delta in userdataIterator(tevent.Deltas) do
