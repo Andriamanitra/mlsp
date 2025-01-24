@@ -70,6 +70,7 @@ languageServer = {
         filetypes = {"lua"}
     },
     luals = {
+        shortName = "luals",
         cmd = "lua-language-server",
         filetypes = {"lua"}
     },
