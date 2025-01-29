@@ -1265,7 +1265,7 @@ function setCompletions(completions)
     end
 end
 
--- Always returns the first match that makes true the condition.
+-- Finds the first active LSPClient that supports the given filetype and LSP capability.
 function findClient(filetype, capability, capabilityDescription)
     if next(activeConnections) == nil then
         display_error("No language server is running! Try starting one with the `lsp` command.")

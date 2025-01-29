@@ -12,6 +12,8 @@ local defaultLanguageServerOptions = {
 
     -- List of filetypes supported by the server.
     -- Defaults to accepting all filetypes if omitted.
+    -- NOTE: filetypes should match the names given in micro syntax files at
+    -- https://github.com/zyedidia/micro/tree/master/runtime/syntax
     filetypes = nil,
 
     -- Language server specific options that are sent to the server during
@@ -30,7 +32,6 @@ local defaultLanguageServerOptions = {
 -- Pre-made configurations for commonly used language servers – you can also
 -- define your own servers to be used in settings at the bottom of this file.
 -- See defaultLanguageServerOptions above for the available options.
--- NOTE: filetypes depends on micro syntaxes
 languageServer = {
     clangd = {
         cmd = "clangd",
