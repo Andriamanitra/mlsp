@@ -31,6 +31,9 @@ emptyMap_metatable.__index = emptyMap_metatable
 local emptyMap = {}
 setmetatable(emptyMap, emptyMap_metatable)
 
+-- workaround because you can't have table like { key = nil } in lua
+local null = {}
+
 -------------------------------------------------------------------------------
 -- Encode
 -------------------------------------------------------------------------------
@@ -64,6 +67,7 @@ end
 
 
 local function encode_table(val, stack)
+  if val == null then return "null" end
   local res = {}
   stack = stack or {}
 
@@ -391,6 +395,7 @@ end
 json = {
   _version = "0.2.0",
   object = emptyMap,
+  null = null,
   decode = function(s) return decode(s) end,
   encode = function(o) return encode(o) end
 }

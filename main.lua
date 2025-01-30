@@ -83,6 +83,15 @@ local docBuffers = {}
 local lastAutocompletion = -1
 local undoStackLengthBefore = 0
 
+-- https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#messageType
+local MessageType = {
+    Error   = 1,
+    Warning = 2,
+    Info    = 3,
+    Log     = 4,
+    Debug   = 5,
+}
+
 local LSPClient = {}
 LSPClient.__index = LSPClient
 
@@ -307,6 +316,24 @@ function LSPClient:request(method, params)
     end
     self.sentRequests[self.requestId] = method
     self.requestId = self.requestId + 1
+    self:send(msg)
+end
+
+function LSPClient:responseResult(id, result)
+    local msg = {
+        jsonrpc = "2.0",
+        id = id,
+        result = result,
+    }
+    self:send(msg)
+end
+
+function LSPClient:responseError(id, err)
+    local msg = {
+        jsonrpc = "2.0",
+        id = id,
+        error = err,
+    }
     self:send(msg)
 end
 
@@ -556,29 +583,49 @@ function LSPClient:handleNotification(notification)
             showDiagnostics(buf, self.clientId, notification.params.diagnostics)
         end
     elseif notification.method == "window/showMessage" then
-        -- notification.params.type can be 1 = error, 2 = warning, 3 = info, 4 = log, 5 = debug
-        if notification.params.type < 3 then
+        if notification.params.type == MessageType.Error then
+            display_error(notification.params.message)
+        elseif notification.params.type == MessageType.Warning then
             display_info(notification.params.message)
         end
     elseif notification.method == "window/logMessage" then
-        -- TODO: somehow include these messages in `lsp-showlog`
+        -- TODO: somehow include these messages in `lsp showlog`
     else
-        log("WARNING: don't know what to do with that message")
+        log("WARNING: don't know what to do with that notification")
+    end
+end
+
+function LSPClient:handleRequest(request)
+    if request.method == "window/showMessageRequest" then
+        if request.params.type == MessageType.Error then
+            display_error(request.params.message)
+        elseif request.params.type == MessageType.Warning then
+            display_info(request.params.message)
+        end
+        -- TODO: make it possible to respond with one of request.params.actions
+        self:responseResult(request.id, json.null)
+    else
+        log("WARNING: don't know what to do with that request")
     end
 end
 
 function LSPClient:receiveMessage(text)
     local decodedMsg = json.decode(text)
-    local request = self.sentRequests[decodedMsg.id]
-    if request then
+
+    if decodedMsg.result then
+        local request = self.sentRequests[decodedMsg.id]
         self.sentRequests[decodedMsg.id] = nil
-        if decodedMsg.error then
-            self:handleResponseError(request, decodedMsg.error)
-        else
-            self:handleResponseResult(request, decodedMsg.result)
-        end
-    else
+        self:handleResponseResult(request, decodedMsg.result)
+    elseif decodedMsg.error then
+        local request = self.sentRequests[decodedMsg.id]
+        self.sentRequests[decodedMsg.id] = nil
+        self:handleResponseError(request, decodedMsg.error)
+    elseif decodedMsg.id and decodedMsg.method then
+        self:handleRequest(decodedMsg)
+    elseif decodedMsg.method then
         self:handleNotification(decodedMsg)
+    else
+        log("WARNING: unrecognized message type")
     end
 end
 
