@@ -80,7 +80,6 @@ local activeConnections = {}
 local allConnections = {}
 setmetatable(allConnections, { __index = function (_, k) return activeConnections[k] end })
 local docBuffers = {}
-local lastAutocompletion = -1
 local undoStackLengthBefore = 0
 
 local LSPClient = {}
@@ -327,10 +326,6 @@ end
 
 function LSPClient:handleResponseError(method, error)
     display_error(string.format("%s (Error %d, %s)", error.message, error.code, method))
-
-    if method == "textDocument/completion" then
-        setCompletions({})
-    end
 end
 
 function LSPClient:handleResponseResult(method, result)
@@ -389,62 +384,64 @@ function LSPClient:handleResponseResult(method, result)
         end
     elseif method == "textDocument/completion" then
         -- TODO: handle result.isIncomplete = true somehow
-        local completions = {}
+        local completionitems = {}
 
         if result ~= nil then
             -- result can be either CompletionItem[] or an object
             -- { isIncomplete: bool, items: CompletionItem[] }
-            completions = result.items or result
+            completionitems = result.items or result
+        end
+
+        local function bySortText(itemA, itemB)
+            local a = itemA.sortText or itemA.label
+            local b = itemB.sortText or itemB.label
+            return string.lower(a) < string.lower(b)
+        end
+
+        table.sort(completionitems, bySortText)
+
+        local buf = micro.CurPane().Buf
+        local wordbytes, _ = buf:GetWord()
+        local stem = util.String(wordbytes)
+
+        local InsertTextFormat = {
+            PlainText = 1,
+            Snippet = 2,
+        }
+
+        local completions = {}
+        local labels = {}
+        for i, item in ipairs(completionitems) do
+            -- discard completions that don't start with the stem under cursor
+            if string.startsWith(item.filterText or item.label, stem) then
+                if i > 1 and completionitems[i-1].label == item.label then
+                    -- skip duplicate
+                elseif item.insertTextFormat == InsertTextFormat.Snippet then
+                    -- TODO: support snippets
+                elseif item.additionalTextEdits then
+                    -- TODO: support additionalTextEdits (eg. adding an import on autocomplete)
+                else
+                    -- TODO: support item.textEdit
+                    -- TODO: item.labelDetails.detail should be shown in faint color after the label
+
+                    table.insert(labels, item.label)
+
+                    local insertText = item.insertText or item.label
+                    local insertText, _ = insertText:gsub("^" .. stem, "")
+                    table.insert(completions, insertText)
+                end
+            end
         end
 
         if #completions == 0 then
             display_info("No completions")
-            setCompletions({})
-            return
-        end
-
-        local cursor = micro.CurPane().Buf:GetActiveCursor()
-        local backward = cursor.X
-        while backward > 0 and util.IsWordChar(util.RuneStr(cursor:RuneUnder(backward-1))) do
-            backward = backward - 1
-        end
-
-        cursor:SetSelectionStart(buffer.Loc(backward, cursor.Y))
-        cursor:SetSelectionEnd(buffer.Loc(cursor.X, cursor.Y))
-
-        local completionList = {}
-
-        if self.serverName == "rust-analyzer" then
-            -- unlike any other language server I've tried, rust-analyzer gives
-            -- completions that don't start with current stem, end with special
-            -- characters (eg. self::) and also occasionally contain duplicates
-            -- (same identifier from different namespace)
-
-            local stem = cursor:GetSelection()
-            stem = util.String(stem)
-
-            local uniqueCompletions = {}
-            for _, completionItem in pairs(completions) do
-                local item = completionItem.insertText or completionItem.label
-                -- FIXME: micro's autocomplete doesn't deal well with non-alnum
-                -- completions so we are currently just discarding them
-                if item:match("^[%a%d_]+$") and item:startsWith(stem) then
-                    uniqueCompletions[item] = 1
-                end
-            end
-
-            for c, _ in pairs(uniqueCompletions) do
-                table.insert(completionList, c)
-            end
+            -- TODO: fall back to micro's built-in completer
         else
-            for _, completionItem in pairs(completions) do
-                local item = completionItem.insertText or completionItem.label
-                table.insert(completionList, item)
-            end
+            -- turn completions into Completer function for micro
+            -- https://pkg.go.dev/github.com/zyedidia/micro/v2/internal/buffer#Completer
+            local completer = function (buf) return completions, labels end
+            buf:Autocomplete(completer)
         end
-
-        cursor:DeleteSelection()
-        setCompletions(completionList)
 
     elseif method == "textDocument/references" then
         if result == nil or table.empty(result) then
@@ -957,47 +954,31 @@ function onSave(bufpane)
 end
 
 function preAutocomplete(bufpane)
+    if not settings.tabAutocomplete then return end
     -- use micro's own autocompleter if there is no LSP connection
+    if next(activeConnections) == nil then return end
+    if findClient(bufpane.Buf:FileType(), "completionProvider") == nil then return end
+
+    local word, wordStartX = bufpane.Buf:GetWord()
+    if wordStartX < 0 then
+        return false -- cancel the autocomplete event if there is no word before cursor
+    end
+
+    if not bufpane.Buf.HasSuggestions then
+        completionAction(bufpane)
+        return false -- cancel the event (a new one is triggered once the server responds)
+    end
+end
+
+function preInsertTab(bufpane)
     if next(activeConnections) == nil then return end
     if not settings.tabAutocomplete then return end
     if findClient(bufpane.Buf:FileType(), "completionProvider") == nil then return end
 
-    -- "[µlsp] no autocompletions" message can be confusing if it does
-    -- not get cleared before falling back to micro's own completion
-    bufpane:ClearInfo()
-
-    local cursor = bufpane.Buf:GetActiveCursor()
-
-    -- don't autocomplete at the beginning of the line because you
-    -- often want tab to mean indentation there!
-    if cursor.X == 0 then return end
-
-    -- if last auto completion happened on the same line then don't
-    -- do completionAction again (because updating the completions
-    -- would mess up tabbing through the suggestions)
-    -- FIXME: invent a better heuristic than line number for this
-    if lastAutocompletion == cursor.Y then return end
-
-    local charBeforeCursor = util.RuneStr(cursor:RuneUnder(cursor.X-1))
-
-    if charBeforeCursor:match("%S") then
-        -- make sure there are at least two empty suggestions to capture
-        -- the autocompletion event – otherwise micro inserts '\t' before
-        -- the language server has a chance to reply with suggestions
-        setCompletions({"", ""})
-
-        completionAction(bufpane)
-        lastAutocompletion = cursor.Y
+    local word, wordStartX = bufpane.Buf:GetWord()
+    if wordStartX >= 0 then
+        return false -- returning false prevents tab from being inserted
     end
-end
-
--- Prevent inserting tab when autocompletions are being requested
-function preInsertTab(bufpane)
-    if next(activeConnections) == nil then return true end
-    if not settings.tabAutocomplete then return true end
-
-    local cursor = bufpane.Buf:GetActiveCursor()
-    return lastAutocompletion ~= cursor.Y
 end
 
 -- FIXME: figure out how to disable all this garbage when there are no active connections
@@ -1025,7 +1006,6 @@ end
 function syncFullDocument(buf)
     if next(activeConnections) == nil then return end
 
-    clearAutocomplete()
     -- filetype is "unknown" for the command prompt
     if buf:FileType() == "unknown" then
         return
@@ -1038,15 +1018,6 @@ function syncFullDocument(buf)
         client:didChange(buf, changes)
     end
 end
-
-function onCursorUp(bufpane)       clearAutocomplete() end
-function onCursorDown(bufpane)     clearAutocomplete() end
-function onCursorPageUp(bufpane)   clearAutocomplete() end
-function onCursorPageDown(bufpane) clearAutocomplete() end
-function onCursorLeft(bufpane)     clearAutocomplete() end
-function onCursorRight(bufpane)    clearAutocomplete() end
-function onCursorStart(bufpane)    clearAutocomplete() end
-function onCursorEnd(bufpane)      clearAutocomplete() end
 
 function preUndo(bp)
     undoStackLengthBefore = bp.Buf.UndoStack:Len()
@@ -1245,24 +1216,6 @@ function showDiagnostics(buf, owner, diagnostics)
             msg = string.format("[µlsp] %s%s", extraInfo or "", msg)
             buf:AddMessage(buffer.NewMessage(owner, msg, startLoc, endLoc, msgType))
         end
-    end
-end
-
-function clearAutocomplete()
-    lastAutocompletion = -1
-end
-
-function setCompletions(completions)
-    local buf = micro.CurPane().Buf
-
-    buf.Suggestions = completions
-    buf.Completions = completions
-    buf.CurSuggestion = -1
-
-    if next(completions) == nil then
-        buf.HasSuggestions = false
-    else
-        buf:CycleAutocomplete(true)
     end
 end
 
