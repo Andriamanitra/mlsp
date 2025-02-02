@@ -434,8 +434,8 @@ function LSPClient:handleResponseResult(method, result)
         end
 
         if #completions == 0 then
-            display_info("No completions")
-            -- TODO: fall back to micro's built-in completer
+            -- fall back to micro's built-in completer
+            micro.CurPane():Autocomplete()
         else
             -- turn completions into Completer function for micro
             -- https://pkg.go.dev/github.com/zyedidia/micro/v2/internal/buffer#Completer
