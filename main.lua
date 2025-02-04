@@ -428,6 +428,8 @@ function LSPClient:handleResponseResult(method, result)
         table.sort(completionitems, bySortText)
 
         local buf = micro.CurPane().Buf
+        local lineInBytes = buf:LineBytes(buf:GetActiveCursor().Y)
+        local indent = util.GetLeadingWhitespace(lineInBytes)
         local wordbytes, _ = buf:GetWord()
         local stem = util.String(wordbytes)
 
@@ -444,7 +446,13 @@ function LSPClient:handleResponseResult(method, result)
                 if i > 1 and completionitems[i-1].label == item.label then
                     -- skip duplicate
                 elseif item.insertTextFormat == InsertTextFormat.Snippet then
-                    -- TODO: support snippets
+                    table.insert(labels, item.label)
+                    local insertText = item.insertText or item.label
+                    insertText = select(
+                        1, insertText:gsub("^" .. stem, ""):gsub("\n", "\n" .. indent)
+                    )
+                    table.insert(completions, insertText)
+
                 elseif item.additionalTextEdits then
                     -- TODO: support additionalTextEdits (eg. adding an import on autocomplete)
                 else
@@ -454,7 +462,7 @@ function LSPClient:handleResponseResult(method, result)
                     table.insert(labels, item.label)
 
                     local insertText = item.insertText or item.label
-                    local insertText, _ = insertText:gsub("^" .. stem, "")
+                    insertText = select(1, insertText:gsub("^" .. stem, ""))
                     table.insert(completions, insertText)
                 end
             end
