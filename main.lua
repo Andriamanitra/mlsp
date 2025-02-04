@@ -26,6 +26,7 @@ function init()
         ["goto-declaration"]    = gotoAction("declaration"),
         ["goto-implementation"] = gotoAction("implementation"),
         ["goto-typedefinition"] = gotoAction("typeDefinition"),
+        ["goto-current-func"]   = gotoCurrentFunction,
         ["hover"]               = hoverAction,
         ["sync-document"]       = function (bp) syncFullDocument(bp.Buf) end,
         ["autocomplete"]        = completionAction,
@@ -82,6 +83,7 @@ setmetatable(allConnections, { __index = function (_, k) return activeConnection
 local docBuffers = {}
 local lastAutocompletion = -1
 local undoStackLengthBefore = 0
+local gotoCurrentFunc = false -- gotoCurrentFunction() vs. documentSymbolsAction()
 
 local LSPClient = {}
 LSPClient.__index = LSPClient
@@ -478,6 +480,32 @@ function LSPClient:handleResponseResult(method, result)
 
             openFileAtLoc(filepath, startLoc)
         end
+    elseif method == "textDocument/documentSymbol" and gotoCurrentFunc then
+        gotoCurrentFunc = false
+        if result == nil or table.empty(result) then
+            display_info("No symbols found in current document to navigate")
+            return
+        end
+
+        local bp = micro.CurPane()
+        local cursor = bp.Buf:GetActiveCursor()
+        for _, sym in ipairs(result) do
+            -- 12: function AND is DocumentSymbol[]. In SymbolInformation[]
+            -- there is no range that can "be used to re-construct a hierarchy
+            -- of the symbols."
+            if sym.kind == 12 and sym.range then
+                local startLoc, endLoc = LSPRange.toLocs(sym.range)
+                if cursor:GreaterEqual(startLoc) and cursor:LessEqual(endLoc) then
+                    display_info("You are in '", sym.name, "', going to the top!")
+                    local newCursorLoc, _ = LSPRange.toLocs(sym.selectionRange)
+                    cursor:GotoLoc(newCursorLoc)
+                    bp:Center()
+                    return
+                end
+            end
+        end
+        display_error("You are not inside a function")
+
     elseif method == "textDocument/documentSymbol" then
         if result == nil or table.empty(result) then
             display_info("No symbols found in current document")
@@ -793,6 +821,11 @@ function gotoAction(kind)
             })
         end
     end
+end
+
+function gotoCurrentFunction(bp)
+    gotoCurrentFunc = true
+    documentSymbolsAction(bp)
 end
 
 function findReferencesAction(bufpane)
