@@ -476,6 +476,7 @@ function LSPClient:handleResponseResult(method, result)
             -- https://pkg.go.dev/github.com/zyedidia/micro/v2/internal/buffer#Completer
             local completer = function (buf) return completions, labels end
             buf:Autocomplete(completer)
+            SearchPlaceholders(micro.CurPane())
         end
 
     elseif method == "textDocument/references" then
@@ -1007,6 +1008,43 @@ function onSave(bufpane)
         client:didSave(bufpane.Buf)
     end
 end
+
+function SearchPlaceholders(bufpane)
+    if not bufpane.Buf.HasSuggestions then return end
+    -- NOTE: save the value, the reference will change
+    local loc = -bufpane.Cursor.Loc
+    local buf = bufpane.Buf
+    local curCompletion = buf.Completions[buf.CurSuggestion + 1]
+    local curCompletionHasPlaceholder = select(
+        1, string.find(curCompletion, "$", 1, true)
+    )
+
+    if curCompletionHasPlaceholder then
+        local regex = "\\$\\{(?:[^{}]+|\\{[^{}]*\\})*\\}|\\$\\d+"
+        local curCompletionNewlines =  go_strings.Count(curCompletion, "\n")
+        local startLoc = buffer.Loc(0, loc.Y - curCompletionNewlines)
+        local _, found, err = buf:FindNext(
+            regex,
+            startLoc, loc,
+            startLoc,
+            true, true -- search down, use regex
+        )
+
+        if err or not found then return end
+        buf.LastSearch = regex
+        buf.LastSearchRegex = true
+        buf.HighlightSearch = true
+    end
+end
+
+function onCycleAutocompleteBack(bufpane)
+    if not settings.tabAutocomplete then return end
+    if next(activeConnections) == nil then return end
+    if findClient(bufpane.Buf:FileType(), "completionProvider") == nil then return end
+    SearchPlaceholders(bufpane)
+end
+
+function onAutocomplete(bufpane) SearchPlaceholders(bufpane) end
 
 function preAutocomplete(bufpane)
     if not settings.tabAutocomplete then return end
