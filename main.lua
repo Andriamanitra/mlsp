@@ -511,17 +511,25 @@ function LSPClient:handleResponseResult(method, result)
             return
         end
 
+        local insideRange = function (cursor, range)
+            local startLoc, endLoc = LSPRange.toLocs(range)
+            return cursor:GreaterEqual(startLoc) and cursor:LessEqual(endLoc)
+        end
+
         local bp = micro.CurPane()
         local cursor = bp.Buf:GetActiveCursor()
         for _, sym in ipairs(result) do
-            -- 12: function AND is DocumentSymbol[]. In SymbolInformation[]
-            -- there is no range that can "be used to re-construct a hierarchy
-            -- of the symbols."
-            if sym.kind == 12 and sym.range then
-                local startLoc, endLoc = LSPRange.toLocs(sym.range)
-                if cursor:GreaterEqual(startLoc) and cursor:LessEqual(endLoc) then
+            if sym.kind == 12 then --Its a function
+                local range, selRange = nil, nil
+                if sym.location ~= nil then -- SymbolInformation[]
+                    range, selRange = sym.location.range, sym.location.range
+                else -- DocumentSymbol[]
+                    range, selRange = sym.range, sym.selectionRange
+                end
+
+                if insideRange(cursor, range) then
                     display_info("You are in '", sym.name, "', going to the top!")
-                    local newCursorLoc, _ = LSPRange.toLocs(sym.selectionRange)
+                    local newCursorLoc, _ = LSPRange.toLocs(selRange)
                     cursor:GotoLoc(newCursorLoc)
                     bp:Center()
                     return
