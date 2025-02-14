@@ -519,7 +519,7 @@ function LSPClient:handleResponseResult(method, result)
         local bp = micro.CurPane()
         local cursor = bp.Buf:GetActiveCursor()
         for _, sym in ipairs(result) do
-            if sym.kind == 12 then --Its a function
+            if sym.kind == 12 or sym.kind == 6 then --function or method
                 local range, selRange = nil, nil
                 if sym.location ~= nil then -- SymbolInformation[]
                     range, selRange = sym.location.range, sym.location.range
