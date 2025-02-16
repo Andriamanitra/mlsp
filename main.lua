@@ -224,6 +224,7 @@ function LSPClient:initialize(server)
     client.serverName = nil
     client.serverVersion = nil
     client.sentRequests = {}
+    client.sentRequestsCB = {} -- override `handleResponse*()`
     client.openFiles = {}
     client.onInitialized = server.onInitialized
     client.filetypes = server.filetypes
@@ -299,7 +300,7 @@ function LSPClient:notification(method, params)
     self:send(msg)
 end
 
-function LSPClient:request(method, params)
+function LSPClient:request(method, params, callback)
     local msg = {
         jsonrpc = "2.0",
         id = self.requestId,
@@ -314,6 +315,7 @@ function LSPClient:request(method, params)
         msg.params = json.object
     end
     self.sentRequests[self.requestId] = method
+    self.sentRequestsCB[self.requestId] = callback
     self.requestId = self.requestId + 1
     self:send(msg)
 end
@@ -611,12 +613,26 @@ function LSPClient:receiveMessage(text)
 
     if decodedMsg.result then
         local request = self.sentRequests[decodedMsg.id]
+        local callback = self.sentRequestsCB[decodedMsg.id]
         self.sentRequests[decodedMsg.id] = nil
-        self:handleResponseResult(request, decodedMsg.result)
+        self.sentRequestsCB[decodedMsg.id] = nil
+        if callback and not table.empty(callback) then
+            callback(request, decodedMsg)
+        else
+            self:handleResponseResult(request, decodedMsg.result)
+        end
+
     elseif decodedMsg.error then
         local request = self.sentRequests[decodedMsg.id]
+        local callback = self.sentRequestsCB[decodedMsg.id]
         self.sentRequests[decodedMsg.id] = nil
-        self:handleResponseError(request, decodedMsg.error)
+        self.sentRequestsCB[decodedMsg.id] = nil
+        if callback and not table.empty(callback) then
+            callback(request, decodedMsg)
+        else
+            self:handleResponseError(request, decodedMsg.error)
+        end
+
     elseif decodedMsg.id and decodedMsg.method then
         self:handleRequest(decodedMsg)
     elseif decodedMsg.method then
@@ -839,7 +855,7 @@ function gotoAction(kind)
     end
 end
 
-function findReferencesAction(bufpane)
+function findReferencesAction(bufpane, callback)
     local client = findClient(bufpane.Buf:FileType(), "referencesProvider", "finding references")
     if client ~= nil then
         local buf = bufpane.Buf
@@ -848,17 +864,17 @@ function findReferencesAction(bufpane)
             textDocument = client:textDocumentIdentifier(buf),
             position = { line = cursor.Y, character = cursor.X },
             context = { includeDeclaration = true }
-        })
+        }, callback)
     end
 end
 
-function documentSymbolsAction(bufpane)
+function documentSymbolsAction(bufpane, callback)
     local client = findClient(bufpane.Buf:FileType(), "documentSymbolProvider", "document symbols")
     if client ~= nil then
         local buf = bufpane.Buf
         client:request("textDocument/documentSymbol", {
             textDocument = client:textDocumentIdentifier(buf)
-        })
+        }, callback)
     end
 end
 
