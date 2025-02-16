@@ -640,10 +640,12 @@ function LSPClient:didOpen(buf)
     end
 
     local filetype = buf:FileType()
-    -- NOTE: if we cancel didOpen then the rest of did*() are "cancelled"
+    local isUnknownFiletype = filetype == "unknown"
+    -- NOTE: if we cancel `didOpen()` then the rest of `did*()` are "cancelled"
     -- by self.openFiles[filePath].
-    -- NOTE: we let pass files with 'unknown' filetype to support niche cases.
-    if filetype ~= "unknown" and not self:supportsFiletype(filetype) then
+    if (    isUnknownFiletype and settings.ignoreBuffersWithUnknownFiletype)
+    or (not isUnknownFiletype and not self:supportsFiletype(filetype))
+    then
         log(string.format("'%s' doesn't support '%s' filetype. 'didOpen' cancelled for '%s'",
                           self.clientId, filetype, buf:GetName()))
         return
