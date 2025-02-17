@@ -1010,7 +1010,10 @@ function onSave(bufpane)
 end
 
 function SearchPlaceholders(bufpane)
-    if not bufpane.Buf.HasSuggestions then return end
+    if not bufpane.Buf.HasSuggestions and #bufpane.Buf.Suggestions == 0 then
+        return
+    end
+
     -- NOTE: save the value, the reference will change
     local loc = -bufpane.Cursor.Loc
     local buf = bufpane.Buf
