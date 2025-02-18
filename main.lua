@@ -428,6 +428,8 @@ function LSPClient:handleResponseResult(method, result)
         table.sort(completionitems, bySortText)
 
         local buf = micro.CurPane().Buf
+        local lineInBytes = buf:LineBytes(buf:GetActiveCursor().Y)
+        local indent = util.GetLeadingWhitespace(lineInBytes)
         local wordbytes, _ = buf:GetWord()
         local stem = util.String(wordbytes)
 
@@ -444,7 +446,13 @@ function LSPClient:handleResponseResult(method, result)
                 if i > 1 and completionitems[i-1].label == item.label then
                     -- skip duplicate
                 elseif item.insertTextFormat == InsertTextFormat.Snippet then
-                    -- TODO: support snippets
+                    table.insert(labels, item.label)
+                    local insertText = item.insertText or item.label
+                    insertText = select(
+                        1, insertText:gsub("^" .. stem, ""):gsub("\n", "\n" .. indent)
+                    )
+                    table.insert(completions, insertText)
+
                 elseif item.additionalTextEdits then
                     -- TODO: support additionalTextEdits (eg. adding an import on autocomplete)
                 else
@@ -454,7 +462,7 @@ function LSPClient:handleResponseResult(method, result)
                     table.insert(labels, item.label)
 
                     local insertText = item.insertText or item.label
-                    local insertText, _ = insertText:gsub("^" .. stem, "")
+                    insertText = select(1, insertText:gsub("^" .. stem, ""))
                     table.insert(completions, insertText)
                 end
             end
@@ -468,6 +476,7 @@ function LSPClient:handleResponseResult(method, result)
             -- https://pkg.go.dev/github.com/zyedidia/micro/v2/internal/buffer#Completer
             local completer = function (buf) return completions, labels end
             buf:Autocomplete(completer)
+            SearchPlaceholders(micro.CurPane())
         end
 
     elseif method == "textDocument/references" then
@@ -1003,6 +1012,46 @@ function onSave(bufpane)
         client:didSave(bufpane.Buf)
     end
 end
+
+function SearchPlaceholders(bufpane)
+    if not bufpane.Buf.HasSuggestions and #bufpane.Buf.Suggestions == 0 then
+        return
+    end
+
+    -- NOTE: save the value, the reference will change
+    local loc = -bufpane.Cursor.Loc
+    local buf = bufpane.Buf
+    local curCompletion = buf.Completions[buf.CurSuggestion + 1]
+    local curCompletionHasPlaceholder = select(
+        1, string.find(curCompletion, "$", 1, true)
+    )
+
+    if curCompletionHasPlaceholder then
+        local regex = "\\$\\{(?:[^{}]+|\\{[^{}]*\\})*\\}|\\$\\d+"
+        local curCompletionNewlines =  go_strings.Count(curCompletion, "\n")
+        local startLoc = buffer.Loc(0, loc.Y - curCompletionNewlines)
+        local _, found, err = buf:FindNext(
+            regex,
+            startLoc, loc,
+            startLoc,
+            true, true -- search down, use regex
+        )
+
+        if err or not found then return end
+        buf.LastSearch = regex
+        buf.LastSearchRegex = true
+        buf.HighlightSearch = true
+    end
+end
+
+function onCycleAutocompleteBack(bufpane)
+    if not settings.tabAutocomplete then return end
+    if next(activeConnections) == nil then return end
+    if findClient(bufpane.Buf:FileType(), "completionProvider") == nil then return end
+    SearchPlaceholders(bufpane)
+end
+
+function onAutocomplete(bufpane) SearchPlaceholders(bufpane) end
 
 function preAutocomplete(bufpane)
     if not settings.tabAutocomplete then return end
