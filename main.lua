@@ -13,6 +13,21 @@ local filepath = import("path/filepath")
 local settings = settings
 local json = json
 
+local activeConnections = {}
+local allConnections = {}
+setmetatable(allConnections, { __index = function (_, k) return activeConnections[k] end })
+local docBuffers = {}
+local undoStackLengthBefore = 0
+
+-- https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#messageType
+local MessageType = {
+    Error   = 1,
+    Warning = 2,
+    Info    = 3,
+    Log     = 4,
+    Debug   = 5,
+}
+
 function init()
     -- ordering of the table affects the autocomplete suggestion order
     local subcommands = {
@@ -33,21 +48,59 @@ function init()
     }
 
     local lspCompleter = function (buf)
-        -- Do NOT autocomplete after first argument
-        -- TODO: autocomplete "lsp start " and "lsp stop "
-        local args = go_strings.Split(buf:Line(0), " ")
-        if #args > 2 then return nil, nil end
+        local inactiveServerIterator = function(langServers)
+            local idx = 0
+            local serverKey = nil
+            return function()
+                idx = idx + 1
+                local serverData
+                -- Skip active servers
+                while true do
+                    serverKey, serverData = next(langServers, serverKey)
+                    if not serverKey then break end
+                    local inactive = activeConnections[serverData.shortName] == nil
+                                 and activeConnections[serverData.cmd] == nil
+
+                    if inactive then break end
+                end
+
+                if serverKey then
+                    -- NOTE: return the clientId (shortName or cmd)
+                    if serverData.shortName then
+                        return idx, serverData.shortName
+                    elseif serverData.cmd then
+                        return idx, serverData.cmd
+                    end
+                end
+            end
+        end
+
+        local args = {}
+        local splits = go_strings.Split(buf:Line(0), " ")
+        for i = 1, #splits do table.insert(args, splits[i]) end
+
+        local iterator = keyIterator(subcommands)
+        if #args == 3 then
+            if args[2] == "start" then
+                -- iterator = keyIterator(languageServer)
+                iterator = inactiveServerIterator(languageServer)
+            elseif args[2] == "stop" then
+                iterator = keyIterator(activeConnections)
+            else return nil, nil end
+        elseif #args > 2 then
+            return nil, nil
+        end
 
         local suggestions = {}
         local completions = {}
         local lastArg = args[#args]
 
-        for subcommand, _ in pairs(subcommands) do
-            local startIdx, endIdx = string.find(subcommand, lastArg, 1, true)
+        for _, suggestion in iterator do
+            local startIdx, endIdx = string.find(suggestion, lastArg, 1, true)
             if startIdx == 1 then
-                local completion = string.sub(subcommand, endIdx + 1, #subcommand)
+                local completion = string.sub(suggestion, endIdx + 1, #suggestion)
                 table.insert(completions, completion)
-                table.insert(suggestions, subcommand)
+                table.insert(suggestions, suggestion)
             end
         end
 
@@ -75,21 +128,6 @@ function init()
     micro.SetStatusInfoFn("mlsp.status")
     config.MakeCommand("lsp", lspCommand, lspCompleter)
 end
-
-local activeConnections = {}
-local allConnections = {}
-setmetatable(allConnections, { __index = function (_, k) return activeConnections[k] end })
-local docBuffers = {}
-local undoStackLengthBefore = 0
-
--- https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#messageType
-local MessageType = {
-    Error   = 1,
-    Warning = 2,
-    Info    = 3,
-    Log     = 4,
-    Debug   = 5,
-}
 
 local LSPClient = {}
 LSPClient.__index = LSPClient
@@ -1444,5 +1482,15 @@ function userdataIterator(data)
         idx = idx + 1
         local success, item = pcall(function() return data[idx] end)
         if success then return idx, item end
+    end
+end
+
+function keyIterator(dict)
+    local idx = 0
+    local key = nil
+    return function()
+        idx = idx + 1
+        key = next(dict, key)
+        if key then return idx, key end
     end
 end
