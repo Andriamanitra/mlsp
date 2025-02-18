@@ -107,7 +107,6 @@ languageServer = {
             client.serverCapabilities.hoverProvider = false
         end,
         filetypes = {"python"}
-
     },
     rustAnalyzer = {
         shortName = "rust",
@@ -134,6 +133,11 @@ end
 
 
 settings = {
+
+    -- Ignore buffers with the file type 'unknown'. Use false to allow files
+    -- with the 'unknown' file type to be tracked by LSP clients. This is done
+    -- to support LSPs that have no syntax in Micro.
+    ignoreBuffersWithUnknownFiletype = true,
 
     -- Use LSP completion in place of micro's default Autocomplete action when
     -- available (you can bind `command:lsp autocomplete` command to a different
