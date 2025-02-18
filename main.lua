@@ -157,10 +157,15 @@ function startServer(bufpane, args)
     LSPClient:initialize(server)
 end
 
-function stopServers(bufpane, args)
+function stopServers(_, args)
+    if not next(activeConnections) then
+        display_info("There is no active language server")
+        return
+    end
+
     local name = args[1]
     if not name then -- stop all
-        for clientId, client in pairs(activeConnections) do
+        for _, client in pairs(activeConnections) do
             client:stop()
         end
         activeConnections = {}
