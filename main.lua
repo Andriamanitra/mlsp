@@ -609,7 +609,7 @@ end
 function LSPClient:receiveMessage(text)
     local decodedMsg = json.decode(text)
 
-    if decodedMsg.result then
+    if decodedMsg.result ~= nil then
         local request = self.sentRequests[decodedMsg.id]
         self.sentRequests[decodedMsg.id] = nil
         self:handleResponseResult(request, decodedMsg.result)
@@ -621,6 +621,10 @@ function LSPClient:receiveMessage(text)
         self:handleRequest(decodedMsg)
     elseif decodedMsg.method then
         self:handleNotification(decodedMsg)
+    elseif self.sentRequests[decodedMsg.id] ~= nil then
+        local request = self.sentRequests[decodedMsg.id]
+        self.sentRequests[decodedMsg.id] = nil
+        display_info(string.format("No result for %s", request))
     else
         log("WARNING: unrecognized message type")
     end
