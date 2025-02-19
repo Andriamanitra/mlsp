@@ -76,7 +76,7 @@ function init()
         end
 
         local args = {}
-        local splits = go_strings.Split(buf:Line(0), " ")
+        local splits = go_strings.Split(buf:Line(0):gsub("%s+", " "), " ")
         for i = 1, #splits do table.insert(args, splits[i]) end
 
         local iterator = keyIterator(subcommands)
