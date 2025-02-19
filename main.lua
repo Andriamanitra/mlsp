@@ -57,20 +57,18 @@ function init()
                 -- Skip active servers
                 while true do
                     serverKey, serverData = next(langServers, serverKey)
-                    if not serverKey then break end
+                    if not serverKey then return nil, nil end
                     local inactive = activeConnections[serverData.shortName] == nil
                                  and activeConnections[serverData.cmd] == nil
 
                     if inactive then break end
                 end
 
-                if serverKey then
-                    -- NOTE: return the clientId (shortName or cmd)
-                    if serverData.shortName then
-                        return idx, serverData.shortName
-                    elseif serverData.cmd then
-                        return idx, serverData.cmd
-                    end
+                -- NOTE: return the clientId (shortName or cmd)
+                if serverData.shortName then
+                    return idx, serverData.shortName
+                elseif serverData.cmd then
+                    return idx, serverData.cmd
                 end
             end
         end
