@@ -48,31 +48,6 @@ function init()
     }
 
     local lspCompleter = function (buf)
-        local inactiveServerIterator = function(langServers)
-            local idx = 0
-            local serverKey = nil
-            return function()
-                idx = idx + 1
-                local serverData
-                -- Skip active servers
-                while true do
-                    serverKey, serverData = next(langServers, serverKey)
-                    if not serverKey then return nil, nil end
-                    local inactive = activeConnections[serverData.shortName] == nil
-                                 and activeConnections[serverData.cmd] == nil
-
-                    if inactive then break end
-                end
-
-                -- NOTE: return the clientId (shortName or cmd)
-                if serverData.shortName then
-                    return idx, serverData.shortName
-                elseif serverData.cmd then
-                    return idx, serverData.cmd
-                end
-            end
-        end
-
         local args = {}
         local splits = go_strings.Split(buf:Line(0):gsub("%s+", " "), " ")
         for i = 1, #splits do table.insert(args, splits[i]) end
@@ -80,8 +55,7 @@ function init()
         local iterator = keyIterator(subcommands)
         if #args == 3 then
             if args[2] == "start" then
-                -- iterator = keyIterator(languageServer)
-                iterator = inactiveServerIterator(languageServer)
+                iterator = keyIterator(languageServer)
             elseif args[2] == "stop" then
                 iterator = keyIterator(activeConnections)
             else return nil, nil end
