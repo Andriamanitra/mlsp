@@ -376,8 +376,9 @@ function LSPClient:handleResponseResult(method, result)
         if type(self.onInitialized) == "function" then
             self:onInitialized()
         end
-        -- FIXME: iterate over *all* currently open buffers
-        onBufferOpen(micro.CurPane().Buf)
+        for _, _, bp in bufpaneIterator() do
+            onBufferOpen(bp.Buf)
+        end
     elseif method == "textDocument/hover" then
         local showHoverInfo = function (results)
             local bf = buffer.NewBuffer(results, "[µlsp] hover")
@@ -1325,22 +1326,25 @@ function relPathFromAbsPath(absPath)
 end
 
 function openFileAtLoc(filepath, loc)
-    local bp = micro.CurPane()
-
     -- don't open a new tab if file is already open
-    local alreadyOpenPane, tabIdx, paneIdx = findBufPaneByPath(filepath)
+    local function openExistingBufPane(fpath)
+        for tabIdx, paneIdx, bp in bufpaneIterator() do
+            if fpath == bp.Buf.AbsPath then
+                micro.Tabs():SetActive(tabIdx)
+                bp:tab():SetActive(paneIdx)
+                return bp
+            end
+        end
+    end
 
-    if alreadyOpenPane then
-        micro.Tabs():SetActive(tabIdx)
-        alreadyOpenPane:tab():SetActive(paneIdx)
-        bp = alreadyOpenPane
-    else
+    local bp = openExistingBufPane(filepath)
+    if bp == nil then
         local newBuf, err = buffer.NewBufferFromFile(filepath)
         if err ~= nil then
             display_error(err)
             return
         end
-        bp:AddTab()
+        micro.CurPane():AddTab()
         bp = micro.CurPane()
         bp:OpenBuffer(newBuf)
     end
@@ -1439,15 +1443,22 @@ function showReferenceLocations(newBufferTitle, lspLocations)
     micro.CurPane():HSplitBuf(newBuffer)
 end
 
-function findBufPaneByPath(fpath)
-    if fpath == nil then return nil end
-    for tabIdx, tab in userdataIterator(micro.Tabs().List) do
-        for paneIdx, pane in userdataIterator(tab.Panes) do
-            -- pane.Buf is nil for panes that are not BufPanes (terminals etc)
-            if pane.Buf ~= nil and fpath == pane.Buf.AbsPath then
-                -- lua indexing starts from 1 but go is stupid and starts from 0 :/
-                return pane, tabIdx - 1, paneIdx - 1
+function bufpaneIterator()
+    local co = coroutine.create(function ()
+        for tabIdx, tab in userdataIterator(micro.Tabs().List) do
+            for paneIdx, pane in userdataIterator(tab.Panes) do
+                -- pane.Buf is nil for panes that are not BufPanes (terminals etc)
+                if pane.Buf ~= nil then
+                    -- lua indexing starts from 1 but go is stupid and starts from 0 :/
+                    coroutine.yield(tabIdx - 1, paneIdx - 1, pane)
+                end
             end
+        end
+    end)
+    return function()
+        local _, tabIdx, paneIdx, bp = coroutine.resume(co)
+        if bp then
+            return tabIdx, paneIdx, bp
         end
     end
 end
