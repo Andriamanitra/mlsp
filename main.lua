@@ -26,6 +26,7 @@ function init()
         ["goto-declaration"]    = gotoAction("declaration"),
         ["goto-implementation"] = gotoAction("implementation"),
         ["goto-typedefinition"] = gotoAction("typeDefinition"),
+        ["goto-current-func"]   = gotoCurrentFunction,
         ["hover"]               = hoverAction,
         ["sync-document"]       = function (bp) syncFullDocument(bp.Buf) end,
         ["autocomplete"]        = completionAction,
@@ -81,6 +82,7 @@ local allConnections = {}
 setmetatable(allConnections, { __index = function (_, k) return activeConnections[k] end })
 local docBuffers = {}
 local undoStackLengthBefore = 0
+local gotoCurrentFunc = false -- gotoCurrentFunction() vs. documentSymbolsAction()
 
 -- https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#messageType
 local MessageType = {
@@ -507,6 +509,40 @@ function LSPClient:handleResponseResult(method, result)
 
             openFileAtLoc(filepath, startLoc)
         end
+    elseif method == "textDocument/documentSymbol" and gotoCurrentFunc then
+        gotoCurrentFunc = false
+        if result == nil or table.empty(result) then
+            display_info("No symbols found in current document to navigate")
+            return
+        end
+
+        local insideRange = function (cursor, range)
+            local startLoc, endLoc = LSPRange.toLocs(range)
+            return cursor:GreaterEqual(startLoc) and cursor:LessEqual(endLoc)
+        end
+
+        local bp = micro.CurPane()
+        local cursor = bp.Buf:GetActiveCursor()
+        for _, sym in ipairs(result) do
+            if sym.kind == 12 or sym.kind == 6 then --function or method
+                local range, selRange = nil, nil
+                if sym.location ~= nil then -- SymbolInformation[]
+                    range, selRange = sym.location.range, sym.location.range
+                else -- DocumentSymbol[]
+                    range, selRange = sym.range, sym.selectionRange
+                end
+
+                if insideRange(cursor, range) then
+                    display_info("You are in '", sym.name, "', going to the top!")
+                    local newCursorLoc, _ = LSPRange.toLocs(selRange)
+                    cursor:GotoLoc(newCursorLoc)
+                    bp:Center()
+                    return
+                end
+            end
+        end
+        display_error("You are not inside a function")
+
     elseif method == "textDocument/documentSymbol" then
         if result == nil or table.empty(result) then
             display_info("No symbols found in current document")
@@ -846,6 +882,11 @@ function gotoAction(kind)
             })
         end
     end
+end
+
+function gotoCurrentFunction(bp)
+    gotoCurrentFunc = true
+    documentSymbolsAction(bp)
 end
 
 function findReferencesAction(bufpane)
