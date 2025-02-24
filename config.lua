@@ -107,7 +107,6 @@ languageServer = {
             client.serverCapabilities.hoverProvider = false
         end,
         filetypes = {"python"}
-
     },
     rustAnalyzer = {
         shortName = "rust",
@@ -169,6 +168,9 @@ settings = {
         typescript = languageServer.deno,
         zig        = languageServer.zls,
     },
+
+    -- Set to true to disable all LSP features in buffers with 'unknown' filetype
+    ignoreBuffersWithUnknownFiletype = false,
 
     -- Which kinds of diagnostics to show in the gutter
     showDiagnostics = {
