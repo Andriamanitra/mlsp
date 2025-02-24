@@ -134,11 +134,6 @@ end
 
 settings = {
 
-    -- Ignore buffers with the file type 'unknown'. Use false to allow files
-    -- with the 'unknown' file type to be tracked by LSP clients. This is done
-    -- to support LSPs that have no syntax in Micro.
-    ignoreBuffersWithUnknownFiletype = true,
-
     -- Use LSP completion in place of micro's default Autocomplete action when
     -- available (you can bind `command:lsp autocomplete` command to a different
     -- key in ~/.config/micro/bindings.json even if this setting is false)
@@ -173,6 +168,9 @@ settings = {
         typescript = languageServer.deno,
         zig        = languageServer.zls,
     },
+
+    -- Set to true to disable all LSP features in buffers with 'unknown' filetype
+    ignoreBuffersWithUnknownFiletype = false,
 
     -- Which kinds of diagnostics to show in the gutter
     showDiagnostics = {

@@ -639,13 +639,11 @@ function LSPClient:didOpen(buf)
         return
     end
 
-    local filetype = buf:FileType()
-    local isUnknownFiletype = filetype == "unknown"
     -- NOTE: if we cancel `didOpen()` then the rest of `did*()` are "cancelled"
-    -- by self.openFiles[filePath].
-    if (    isUnknownFiletype and settings.ignoreBuffersWithUnknownFiletype)
-    or (not isUnknownFiletype and not self:supportsFiletype(filetype))
-    then
+    -- by self.openFiles[filePath] being `nil`.
+
+    local filetype = buf:FileType()
+    if filetype ~= "unknown" and not self:supportsFiletype(filetype) then
         log(string.format("'%s' doesn't support '%s' filetype. 'didOpen' cancelled for '%s'",
                           self.clientId, filetype, buf:GetName()))
         return
@@ -945,6 +943,11 @@ function onBufferOpen(buf)
     if buf.Type.Kind ~= buffer.BTDefault then return end
     -- Ignore buffers created by clients
     if string.startsWith(buf:GetName(), "[µlsp]") then return end
+
+    if settings.ignoreBuffersWithUnknownFiletype and buf:FileType() == "unknown" then
+        log(string.format("Ignoring buffer '%s' with unknown filetype", buf:GetName()))
+        return
+    end
 
     local filePath = buf.AbsPath
 
