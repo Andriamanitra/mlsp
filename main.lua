@@ -610,13 +610,24 @@ end
 
 function LSPClient:handleRequest(request)
     if request.method == "window/showMessageRequest" then
-        if request.params.type == MessageType.Error then
+        if request.params.actions ~= nil then
+            local onEnter = {}
+            for idx, action in ipairs(request.params.actions) do
+                onEnter[string.format("%d) %s", idx, action.title)] = function (bp)
+                    self:responseResult(request.id, action)
+                    bp:Quit()
+                end
+            end
+            Menu{
+                header = string.format("%s\n\nAvailable actions (press Enter to select):", request.params.message),
+                onEnter = onEnter,
+                defaultAction = function () self:responseResult(request.id, json.null) end
+            }:open()
+        elseif request.params.type == MessageType.Error then
             display_error(request.params.message)
         elseif request.params.type == MessageType.Warning then
             display_info(request.params.message)
         end
-        -- TODO: make it possible to respond with one of request.params.actions
-        self:responseResult(request.id, json.null)
     else
         log("WARNING: don't know what to do with that request")
     end
@@ -1042,7 +1053,12 @@ function preAutocomplete(bufpane)
     end
 end
 
+function preInsertNewline(bufpane)
+    _preInsertNewline(bufpane)
+end
+
 function preInsertTab(bufpane)
+    _preInsertTab(bufpane)
     if next(activeConnections) == nil then return end
     if not settings.tabAutocomplete then return end
     if findClient(bufpane.Buf:FileType(), "completionProvider") == nil then return end
@@ -1335,7 +1351,8 @@ function relPathFromAbsPath(absPath)
     return relPath
 end
 
-function openFileAtLoc(filepath, loc)
+function openFileAtLoc(filepath, loc, keepFocus)
+    local originalbp = micro.CurPane()
     -- don't open a new tab if file is already open
     local function openExistingBufPane(fpath)
         for tabIdx, paneIdx, bp in bufpaneIterator() do
@@ -1365,6 +1382,15 @@ function openFileAtLoc(filepath, loc)
     cursor:GotoLoc(loc)
     bp.Buf:RelocateCursors() -- make sure cursor is inside the buffer
     bp:Center()
+    if keepFocus then
+        for tabIdx, paneIdx, x in bufpaneIterator() do
+            if originalbp == x then
+                micro.Tabs():SetActive(tabIdx)
+                originalbp:tab():SetActive(paneIdx)
+                return
+            end
+        end
+    end
 end
 
 -- takes Location[] https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#location
@@ -1417,6 +1443,8 @@ function showReferenceLocations(newBufferTitle, lspLocations)
         return a.column < b.column
     end)
 
+    local onEnter = {}
+    local onTab = {}
     local bufLines = {}
     local curFilePath = ""
     local file = nil
@@ -1428,6 +1456,14 @@ function showReferenceLocations(newBufferTitle, lspLocations)
             if #bufLines > 0 then table.insert(bufLines, "") end
             curFilePath = ref.path
             table.insert(bufLines, curFilePath)
+            onEnter[curFilePath] = function (bp)
+                openFileAtLoc(curFilePath, buffer.Loc(0, 0))
+                bp:Quit()
+            end
+            onTab[curFilePath] = function ()
+                local keepFocus = true
+                openFileAtLoc(curFilePath, buffer.Loc(0, 0), keepFocus)
+            end
             file = io.open(curFilePath, "rb")
             lineCount = 0
         end
@@ -1439,18 +1475,27 @@ function showReferenceLocations(newBufferTitle, lspLocations)
                 lineCount = lineCount + 1
             end
         end
-        table.insert(bufLines, string.format("\t%d:%d:%s", ref.line, ref.column, lineContent or ""))
+        local line = string.format("%6d│%s", ref.line, lineContent or "")
+        onEnter[line] = function (bp)
+            openFileAtLoc(curFilePath, buffer.Loc(ref.column - 1, ref.line - 1))
+            bp:Quit()
+        end
+        onTab[line] = function ()
+            local keepFocus = true
+            openFileAtLoc(curFilePath, buffer.Loc(ref.column - 1, ref.line - 1), keepFocus)
+        end
+        table.insert(bufLines, line)
     end
 
     if file then file:close() end -- last iteration does not close last file
-    table.insert(bufLines, "")
 
-    local newBuffer = buffer.NewBuffer(table.concat(bufLines, "\n"), newBufferTitle)
-    newBuffer.Type.Scratch = true
-    newBuffer.Type.Readonly = true
-    --We enforce tabs, dont annoy users
-    newBuffer.Settings["hltaberrors"] = false
-    micro.CurPane():HSplitBuf(newBuffer)
+    Menu{
+        name = "[µlsp] References",
+        header = "Found references (press Enter to jump, Tab to preview):\n",
+        onEnter = onEnter,
+        onTab = onTab,
+        labels = bufLines
+    }:open()
 end
 
 function bufpaneIterator()
