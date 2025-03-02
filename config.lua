@@ -75,6 +75,16 @@ languageServer = {
         cmd = "lua-language-server",
         filetypes = {"lua"}
     },
+    perlls = {
+        shortName = "perlls",
+        cmd = "perl",
+        args = {"-MPerl::LanguageServer", "-e", "Perl::LanguageServer::run"},
+        filetypes = {"perl"}
+    },
+    perlnavigator = {
+        cmd = "perlnavigator",
+        filetypes = {"perl"}
+    },
     pylsp = {
         cmd = "pylsp",
         filetypes = {"python"}
@@ -162,6 +172,7 @@ settings = {
         json       = languageServer.deno,
         lua        = languageServer.luals,
         markdown   = languageServer.deno,
+        perl       = languageServer.perlnavigator,
         python     = languageServer.pylsp,
         ruby       = languageServer.rubylsp,
         rust       = languageServer.rustAnalyzer,
