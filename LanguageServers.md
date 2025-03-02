@@ -84,6 +84,16 @@
     [instructions](https://github.com/denoland/deno_install/blob/master/README.md#deno_install)
   - Command: `deno lsp`
 
+## Perl
+
+- [Perl::LanguageServer](https://github.com/richterger/Perl-LanguageServer)
+  - Installation: [instructions](https://github.com/richterger/Perl-LanguageServer#requirements)
+  - Command: `perl -MPerl::LanguageServer -e Perl::LanguageServer::run`
+
+- [PerlNavigator](https://github.com/bscan/PerlNavigator)
+  - Installation: `npm install -g perlnavigator-server`
+  - Command: `perlnavigator`
+
 ## Python
 
 - [pylsp](https://github.com/python-lsp/python-lsp-server)
