@@ -1029,7 +1029,12 @@ function preAutocomplete(bufpane)
     if not settings.tabAutocomplete then return end
     -- use micro's own autocompleter if there is no LSP connection
     if next(activeConnections) == nil then return end
-    if findClient(bufpane.Buf:FileType(), "completionProvider") == nil then return end
+
+    local filetype = bufpane.Buf:FileType()
+    local client = findClient(filetype, "completionProvider")
+    if client == nil or not client:supportsFiletype(filetype) then
+        return true -- continue with autocomplete event
+    end
 
     local word, wordStartX = bufpane.Buf:GetWord()
     if wordStartX < 0 then
