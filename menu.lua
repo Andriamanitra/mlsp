@@ -18,7 +18,7 @@ local function _preInsertTab(bp)
 end
 
 local function openMenu(m)
-    local content = m.header .. "\n" .. table.concat(m.labels, "\n")
+    local content = m.header .. "\n" .. table.concat(m.labels, "\n") .. "\n"
     local newBuffer = buffer.NewBuffer(content, m.name)
     newBuffer.Type.Scratch = true
     newBuffer.Type.Readonly = true
