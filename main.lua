@@ -1289,7 +1289,7 @@ function showDiagnostics(buf, owner, diagnostics)
 
             local msg = diagnostic.message
             -- make the msg look better on one line if there's newlines or extra whitespace
-            msg = msg:gsub("(%a)\n(%a)", "%1 / %2"):gsub("%s+", " ")
+            msg = msg:gsub("^%s+", ""):gsub("%s+$", ""):gsub("\n", " / "):gsub("%s+", " ")
             msg = string.format("[µlsp] %s%s", extraInfo or "", msg)
             buf:AddMessage(buffer.NewMessage(owner, msg, startLoc, endLoc, msgType))
         end
