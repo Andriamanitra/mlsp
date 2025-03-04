@@ -10,9 +10,6 @@ local go_strings = import("strings")
 local go_time = import("time")
 local filepath = import("path/filepath")
 
-local settings = settings
-local json = json
-
 local activeConnections = {}
 local allConnections = {}
 setmetatable(allConnections, { __index = function (_, k) return activeConnections[k] end })
@@ -618,7 +615,7 @@ function LSPClient:handleRequest(request)
                     bp:Quit()
                 end
             end
-            Menu{
+            menu.new{
                 header = string.format("%s\n\nAvailable actions (press Enter to select):", request.params.message),
                 onEnter = onEnter,
                 defaultAction = function () self:responseResult(request.id, json.null) end
@@ -1059,11 +1056,11 @@ function preAutocomplete(bufpane)
 end
 
 function preInsertNewline(bufpane)
-    _preInsertNewline(bufpane)
+    menu.preInsertNewline(bufpane)
 end
 
 function preInsertTab(bufpane)
-    _preInsertTab(bufpane)
+    menu.preInsertTab(bufpane)
     if next(activeConnections) == nil then return end
     if not settings.tabAutocomplete then return end
     if findClient(bufpane.Buf:FileType(), "completionProvider") == nil then return end
@@ -1494,7 +1491,7 @@ function showReferenceLocations(newBufferTitle, lspLocations)
 
     if file then file:close() end -- last iteration does not close last file
 
-    Menu{
+    menu.new{
         name = "[µlsp] References",
         header = "Found references (press Enter to jump, Tab to preview):\n",
         onEnter = onEnter,

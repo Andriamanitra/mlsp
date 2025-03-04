@@ -1,7 +1,7 @@
 local micro = import("micro")
 local buffer = import("micro/buffer")
 
-function _preInsertNewline(bp)
+local function _preInsertNewline(bp)
     local callback = bp.Buf.Settings["onEnter"]
     if callback ~= nil then
         local line = bp.Buf:Line(bp.Buf:GetActiveCursor().Y)
@@ -9,7 +9,7 @@ function _preInsertNewline(bp)
     end
 end
 
-function _preInsertTab(bp)
+local function _preInsertTab(bp)
     local callback = bp.Buf.Settings["onTab"]
     if callback ~= nil then
         local line = bp.Buf:Line(bp.Buf:GetActiveCursor().Y)
@@ -17,26 +17,7 @@ function _preInsertTab(bp)
     end
 end
 
-function Menu(args)
-    local labels = args.labels
-    if labels == nil then
-        labels = {}
-        for label, _ in pairs(args.onEnter or {}) do
-            table.insert(labels, label)
-        end
-    end
-    local menu = {}
-    menu.name = args.name or "[µlsp] Menu"
-    menu.header = args.header or ""
-    menu.onEnter = args.onEnter or {}
-    menu.onTab = args.onTab or {}
-    menu.labels = labels
-    menu.defaultAction = args.defaultAction
-    menu.open = openMenu
-    return menu
-end
-
-function openMenu(m)
+local function openMenu(m)
     local content = m.header .. "\n" .. table.concat(m.labels, "\n")
     local newBuffer = buffer.NewBuffer(content, m.name)
     newBuffer.Type.Scratch = true
@@ -59,3 +40,29 @@ function openMenu(m)
     local _, headerLineCount = string.gsub(m.header, "\n", "\n")
     bp:GotoLoc(buffer.Loc(0, headerLineCount + 1))
 end
+
+local function Menu(args)
+    local labels = args.labels
+    if labels == nil then
+        labels = {}
+        for label, _ in pairs(args.onEnter or {}) do
+            table.insert(labels, label)
+        end
+    end
+
+    return {
+        name = args.name or "[µlsp] Menu",
+        header = args.header or "",
+        onEnter = args.onEnter or {},
+        onTab = args.onTab or {},
+        labels = labels,
+        defaultAction = args.defaultAction,
+        open = openMenu
+    }
+end
+
+menu = {
+    new = Menu,
+    preInsertNewline = _preInsertNewline,
+    preInsertTab = _preInsertTab
+}
