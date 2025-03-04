@@ -1425,17 +1425,16 @@ function showSymbolLocations(symbols)
     local fmt = "%-" .. colWidths[1] .. "s %-" .. colWidths[2] .. "s  %s:%d"
 
     for _, sym in ipairs(symbols) do
-        local fpath = sym.location and sym.location.uri or micro.CurPane().Buf.AbsPath
         local loc = buffer.Loc(sym.range.start.character, sym.range.start.line)
-        local label = string.format(fmt, sym.kind, sym.name, fpath, sym.range.start.line + 1)
+        local label = string.format(fmt, sym.kind, sym.name, sym.fpath, sym.range.start.line + 1)
 
         table.insert(labels, label)
         onEnter[label] = function (bp)
-            openFileAtLoc(fpath, loc)
+            openFileAtLoc(sym.fpath, loc)
             bp:Quit()
         end
         onTab[label] = function ()
-            focusLocation(fpath, loc)
+            focusLocation(sym.fpath, loc)
         end
     end
 
