@@ -208,7 +208,7 @@ function showLog(bufpane, args)
     local newBuffer = buffer.NewBuffer(foundClient.stderr, title)
 
     newBuffer:SetOption("filetype", "text")
-    newBuffer.Type.scratch = true
+    newBuffer.Type.Scratch = true
     newBuffer.Type.Readonly = true
 
     micro.CurPane():HSplitBuf(newBuffer)
@@ -520,50 +520,7 @@ function LSPClient:handleResponseResult(method, result)
             display_info("No symbols found in current document")
             return
         end
-        local symbolLocations = {}
-        local symbolLabels = {}
-        local SYMBOLKINDS = {
-	        [1] = "File",
-	        [2] = "Module",
-	        [3] = "Namespace",
-	        [4] = "Package",
-	        [5] = "Class",
-	        [6] = "Method",
-	        [7] = "Property",
-	        [8] = "Field",
-	        [9] = "Constructor",
-	        [10] = "Enum",
-	        [11] = "Interface",
-	        [12] = "Function",
-	        [13] = "Variable",
-	        [14] = "Constant",
-	        [15] = "String",
-	        [16] = "Number",
-	        [17] = "Boolean",
-	        [18] = "Array",
-	        [19] = "Object",
-	        [20] = "Key",
-	        [21] = "Null",
-	        [22] = "EnumMember",
-	        [23] = "Struct",
-	        [24] = "Event",
-	        [25] = "Operator",
-	        [26] = "TypeParameter",
-        }
-        for _, sym in ipairs(result) do
-            -- if sym.location is missing we are dealing with DocumentSymbol[]
-            -- instead of SymbolInformation[]
-            if sym.location == nil then
-                table.insert(symbolLocations, {
-                    uri = micro.CurPane().Buf.AbsPath,
-                    range = sym.range
-                })
-            else
-                table.insert(symbolLocations, sym.location)
-            end
-            table.insert(symbolLabels, string.format("%-15s %s", "["..SYMBOLKINDS[sym.kind].."]", sym.name))
-        end
-        showSymbolLocations("[µlsp] document symbols", symbolLocations, symbolLabels)
+        showSymbolLocations(result)
     else
         log("WARNING: dunno what to do with response to", method)
     end
@@ -1397,31 +1354,80 @@ end
 
 -- takes Location[] https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#location
 -- and renders them to user
-function showSymbolLocations(newBufferTitle, lspLocations, labels)
-    local symbols = {}
-    local maxLabelLen = 0
-    for i, lspLoc in ipairs(lspLocations) do
-        local fpath = absPathFromFileUri(lspLoc.uri)
-        local lineNumber = lspLoc.range.start.line + 1
-        local columnNumber = lspLoc.range.start.character + 1
-        local labelLen = #labels[i]
-        symbols[i] = {
-            label = labels[i],
-            location = string.format("%s:%d:%d\n", fpath, lineNumber, columnNumber)
-        }
-        if maxLabelLen < labelLen then maxLabelLen = labelLen end
-    end
+function showSymbolLocations(symbols)
+    local SYMBOLKINDS = {
+        [1] = "File",
+        [2] = "Module",
+        [3] = "Namespace",
+        [4] = "Package",
+        [5] = "Class",
+        [6] = "Method",
+        [7] = "Property",
+        [8] = "Field",
+        [9] = "Constructor",
+        [10] = "Enum",
+        [11] = "Interface",
+        [12] = "Function",
+        [13] = "Variable",
+        [14] = "Constant",
+        [15] = "String",
+        [16] = "Number",
+        [17] = "Boolean",
+        [18] = "Array",
+        [19] = "Object",
+        [20] = "Key",
+        [21] = "Null",
+        [22] = "EnumMember",
+        [23] = "Struct",
+        [24] = "Event",
+        [25] = "Operator",
+        [26] = "TypeParameter",
+    }
 
-    local bufContents = ""
-    local format = "%-" .. maxLabelLen .. "s # %s"
+    local colWidths = {5, 5}
     for _, sym in ipairs(symbols) do
-        bufContents = bufContents .. string.format(format, sym.label, sym.location)
+        if sym.location == nil then -- symbols is DocumentSymbol[]
+            -- FIXME: if user manages to change pane after initiating the request
+            -- buf before the server responds this path could be wrong
+            sym.fpath = micro.CurPane().Buf.AbsPath
+        else -- symbols is (deprecated) SymbolInformation[]
+            sym.fpath = absPathFromFileUri(sym.location.uri)
+            sym.range = sym.location.range
+        end
+
+        sym.kind = string.format("[%s]", SYMBOLKINDS[sym.kind])
+        if colWidths[1] < #sym.kind then colWidths[1] = #sym.kind end
+        if colWidths[2] < #sym.name then colWidths[2] = #sym.name end
     end
 
-    local newBuffer = buffer.NewBuffer(bufContents, newBufferTitle)
-    newBuffer.Type.Scratch = true
-    newBuffer.Type.Readonly = true
-    micro.CurPane():HSplitBuf(newBuffer)
+    local labels = {}
+    local onEnter = {}
+    local onTab = {}
+    local fmt = "%-" .. colWidths[1] .. "s %-" .. colWidths[2] .. "s  %s:%d"
+
+    for _, sym in ipairs(symbols) do
+        local fpath = sym.location and sym.location.uri or micro.CurPane().Buf.AbsPath
+        local loc = buffer.Loc(sym.range.start.character, sym.range.start.line)
+        local label = string.format(fmt, sym.kind, sym.name, fpath, sym.range.start.line + 1)
+
+        table.insert(labels, label)
+        onEnter[label] = function (bp)
+            openFileAtLoc(fpath, loc)
+            bp:Quit()
+        end
+        onTab[label] = function ()
+            local keepFocus = true
+            openFileAtLoc(fpath, loc, keepFocus)
+        end
+    end
+
+    menu.new{
+        name = "[µlsp] Document symbols",
+        header = "Document symbols (press Enter to jump, Tab to preview)\n",
+        labels = labels,
+        onEnter = onEnter,
+        onTab = onTab
+    }:open()
 end
 
 -- takes Location[] https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#location
