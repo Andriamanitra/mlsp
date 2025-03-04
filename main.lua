@@ -924,6 +924,10 @@ function onExit(text, userargs)
     allConnections[clientId] = nil
 end
 
+function onSetActive(bp)
+    bp.Buf:ClearMessages("µlsp-focus")
+end
+
 function onBufferOpen(buf)
     if buf.Type.Kind ~= buffer.BTDefault then return end
     -- Ignore buffers created by clients
@@ -1346,11 +1350,20 @@ function openFileAtLoc(filepath, loc, keepFocus)
             if originalbp == x then
                 micro.Tabs():SetActive(tabIdx)
                 originalbp:tab():SetActive(paneIdx)
-                return
+                return bp
             end
         end
     end
+    return bp
 end
+
+function focusLocation(fpath, loc)
+    local keepFocus = true
+    local openedbp = openFileAtLoc(fpath, loc, keepFocus)
+    openedbp.Buf:ClearMessages("µlsp-focus")
+    openedbp.Buf:AddMessage(buffer.NewMessage("µlsp-focus", "", loc, loc, buffer.MTInfo))
+end
+
 
 -- takes Location[] https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#location
 -- and renders them to user
@@ -1416,8 +1429,7 @@ function showSymbolLocations(symbols)
             bp:Quit()
         end
         onTab[label] = function ()
-            local keepFocus = true
-            openFileAtLoc(fpath, loc, keepFocus)
+            focusLocation(fpath, loc)
         end
     end
 
@@ -1469,8 +1481,7 @@ function showReferenceLocations(newBufferTitle, lspLocations)
                 bp:Quit()
             end
             onTab[curFilePath] = function ()
-                local keepFocus = true
-                openFileAtLoc(curFilePath, buffer.Loc(0, 0), keepFocus)
+                focusLocation(curFilePath, buffer.Loc(0, 0))
             end
             file = io.open(curFilePath, "rb")
             lineCount = 0
@@ -1489,8 +1500,7 @@ function showReferenceLocations(newBufferTitle, lspLocations)
             bp:Quit()
         end
         onTab[line] = function ()
-            local keepFocus = true
-            openFileAtLoc(curFilePath, buffer.Loc(ref.column - 1, ref.line - 1), keepFocus)
+            focusLocation(curFilePath, buffer.Loc(ref.column - 1, ref.line - 1))
         end
         table.insert(bufLines, line)
     end
