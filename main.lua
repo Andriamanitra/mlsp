@@ -1499,7 +1499,7 @@ function showReferenceLocations(newBufferTitle, lspLocations)
 
     menu.new{
         name = "[µlsp] References",
-        header = "Found references (press Enter to jump, Tab to preview):\n",
+        header = "References (press Enter to jump, Tab to preview)\n",
         onEnter = onEnter,
         onTab = onTab,
         labels = bufLines
