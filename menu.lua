@@ -25,7 +25,7 @@ local function openMenu(m)
     newBuffer.Settings["statusline"] = false
     newBuffer.Settings["hltaberrors"] = false
     newBuffer.Settings["onEnter"] = function(bp, selected)
-        local action = m.onEnter[selected] or m.defaultAction
+        local action = m.onEnter[selected]
         if type(action) == "function" then
             action(bp)
         end
@@ -42,21 +42,12 @@ local function openMenu(m)
 end
 
 local function Menu(args)
-    local labels = args.labels
-    if labels == nil then
-        labels = {}
-        for label, _ in pairs(args.onEnter or {}) do
-            table.insert(labels, label)
-        end
-    end
-
     return {
         name = args.name or "[µlsp] Menu",
         header = args.header or "",
         onEnter = args.onEnter or {},
         onTab = args.onTab or {},
-        labels = labels,
-        defaultAction = args.defaultAction,
+        labels = args.labels or {},
         open = openMenu
     }
 end

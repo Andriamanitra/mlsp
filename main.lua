@@ -565,18 +565,24 @@ end
 function LSPClient:handleRequest(request)
     if request.method == "window/showMessageRequest" then
         if request.params.actions ~= nil then
+            local labels = {}
             local onEnter = {}
             for idx, action in ipairs(request.params.actions) do
-                onEnter[string.format("%d) %s", idx, action.title)] = function (bp)
+                local label = string.format("%d) %s", idx, action.title)
+                table.insert(labels, label)
+                onEnter[label] = function (bp)
                     self:responseResult(request.id, action)
                     bp:Quit()
                 end
             end
             menu.new{
                 header = string.format("%s\n\nAvailable actions (press Enter to select):", request.params.message),
-                onEnter = onEnter,
-                defaultAction = function () self:responseResult(request.id, json.null) end
+                labels = labels,
+                onEnter = onEnter
             }:open()
+            -- FIXME: the spec says we should send null response if user selected nothing
+            -- so we need some way to tell if user quit the menu without selecting anything
+            --self:responseResult(request.id, json.null)
         elseif request.params.type == MessageType.Error then
             display_error(request.params.message)
         elseif request.params.type == MessageType.Warning then
