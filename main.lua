@@ -268,7 +268,21 @@ function LSPClient:initialize(server)
                     contextSupport = true
                 },
                 codeAction = {
-                    disabledSupport = true
+                    disabledSupport = true,
+                    codeActionLiteralSupport = {
+                        codeActionKind = {
+                            valueSet = {
+                                "",
+                                "quickfix",
+                                "refactor",
+                                "refactor.extract",
+                                "refactor.inline",
+                                "refactor.rewrite",
+                                "source",
+                                "source.organizeImports"
+                            }
+                        }
+                    }
                 }
             },
             workspace = {
@@ -1214,6 +1228,12 @@ end
 
 
 function editWorkspace(workspaceEdit)
+    -- https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#workspaceEdit
+    -- workspaceEdit contains either:
+    -- * changes?: { [uri: DocumentUri]: TextEdit[]; };
+    -- OR
+    -- * documentChanges?: (TextDocumentEdit | CreateFile | RenameFile | DeleteFile)[]
+
     local function findBufByDocumentUri(documentUri)
         local fpath = absPathFromFileUri(documentUri)
         for tabIdx, paneIdx, bp in bufpaneIterator() do
@@ -1225,7 +1245,7 @@ function editWorkspace(workspaceEdit)
     end
 
     local success = false
-    for documentUri, textedits in pairs(workspaceEdit.changes) do
+    for documentUri, textedits in pairs(workspaceEdit.changes or {}) do
         local buf = findBufByDocumentUri(documentUri)
         if buf ~= nil then
             editBuf(buf, textedits)
@@ -1234,6 +1254,22 @@ function editWorkspace(workspaceEdit)
             log("ERROR: Unable to apply workspace edit for document with uri", documentUri)
         end
     end
+
+    for _, textDocumentEdit in ipairs(workspaceEdit.documentChanges or {}) do
+        if textDocumentEdit.kind ~= nil then
+            -- FIXME: support CreateFile, RenameFile, DeleteFile
+            log("WARNING: Skipping unsupported textDocumentEdit:", textDocumentEdit.kind)
+        else    
+            local buf = findBufByDocumentUri(textDocumentEdit.textDocument.uri)
+            if buf ~= nil then
+                editBuf(buf, textDocumentEdit.edits)
+                success = true
+            else
+                log("ERROR: Unable to apply workspace edit for textdocument", textDocumentEdit.textDocument)
+            end
+        end
+    end
+
     return success
 end
 
@@ -1604,7 +1640,6 @@ function showCodeActions(client, actions)
     local onEnter = {}
     -- actions can be either Command[] or CodeAction[]
     for _, action in ipairs(actions) do
-        local cmd = type(action.command) == "string" and action or action.command
         if action.disabled ~= nil then
             table.insert(labels, string.format("%s (disabled: %s)", action.title, action.disabled.reason))
         else
@@ -1619,12 +1654,13 @@ function showCodeActions(client, actions)
                         edited = true
                     end
                 end
-                if commandId ~= nil then
+                local command = action.command ~= nil and action.command.command or action.command
+                if command then
                     local buf = bufpane.Buf
                     local cursor = buf:GetActiveCursor()
                     client:request("workspace/executeCommand", {
-                        command = cmd.command,
-                        arguments = cmd.arguments
+                        command = command,
+                        arguments = action.arguments or action.command.arguments
                     })
                 end
                 bp:Quit()
