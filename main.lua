@@ -30,6 +30,7 @@ function init()
     local subcommands = {
         ["start"]               = startServer,
         ["stop"]                = stopServers,
+        ["code-actions"]        = codeActionsAction,
         ["diagnostic-info"]     = openDiagnosticBufferAction,
         ["document-symbols"]    = documentSymbolsAction,
         ["find-references"]     = findReferencesAction,
@@ -265,7 +266,13 @@ function LSPClient:initialize(server)
                         documentationFormat = {},
                     },
                     contextSupport = true
+                },
+                codeAction = {
+                    disabledSupport = true
                 }
+            },
+            workspace = {
+                applyEdit = true
             }
         }
     }
@@ -521,6 +528,14 @@ function LSPClient:handleResponseResult(method, result)
             return
         end
         showSymbolLocations(result)
+    elseif method == "textDocument/codeAction" then
+        if result == nil or table.empty(result) then
+            display_info("No code actions found for current cursor")
+            return
+        end
+        showCodeActions(self, result)
+    elseif method == "workspace/executeCommand" then
+        log("executed command, received:", result)
     else
         log("WARNING: dunno what to do with response to", method)
     end
@@ -588,6 +603,9 @@ function LSPClient:handleRequest(request)
         elseif request.params.type == MessageType.Warning then
             display_info(request.params.message)
         end
+    elseif request.method == "workspace/applyEdit" then
+        local success = editWorkspace(request.params.edit)
+        self:responseResult(request.id, { applied = success })
     else
         log("WARNING: don't know what to do with that request")
     end
@@ -849,6 +867,42 @@ function documentSymbolsAction(bufpane)
         local buf = bufpane.Buf
         client:request("textDocument/documentSymbol", {
             textDocument = client:textDocumentIdentifier(buf)
+        })
+    end
+end
+
+function codeActionsAction(bufpane)
+    local client = findClient(bufpane.Buf:FileType(), "codeActionProvider", "code actions")
+    if client ~= nil then
+        local buf = bufpane.Buf
+        local cursor = buf:GetActiveCursor()
+        local range = nil
+        if cursor:HasSelection() then
+            range = LSPRange.fromSelection(cursor.CurSelection)
+        else
+            range = {
+                ["start"] = { line = cursor.Y, character = cursor.X },
+                ["end"]   = { line = cursor.Y, character = cursor.X }
+            }
+        end
+
+        local filePath = buf.AbsPath
+        local allDiagnostics = client.openFiles[filePath].diagnostics
+        local diagnostics = {}
+        for _, diag in ipairs(allDiagnostics) do
+            if diag.range["start"].line <= cursor.Y and cursor.Y <= diag.range["end"].line then
+                table.insert(diagnostics, diag)
+            end
+        end
+
+        client:request("textDocument/codeAction", {
+            textDocument = client:textDocumentIdentifier(buf),
+            range = range,
+            context = {
+                diagnostics = diagnostics,
+                -- 1 = invoked by user, 2 = triggered automatically
+                triggerKind = 1
+            }
         })
     end
 end
@@ -1158,6 +1212,30 @@ function table.empty(x)
     return type(x) == "table" and next(x) == nil
 end
 
+
+function editWorkspace(workspaceEdit)
+    local function findBufByDocumentUri(documentUri)
+        local fpath = absPathFromFileUri(documentUri)
+        for tabIdx, paneIdx, bp in bufpaneIterator() do
+            if fpath == bp.Buf.AbsPath then
+                return bp.Buf
+            end
+        end
+        return nil
+    end
+
+    local success = false
+    for documentUri, textedits in pairs(workspaceEdit.changes) do
+        local buf = findBufByDocumentUri(documentUri)
+        if buf ~= nil then
+            editBuf(buf, textedits)
+            success = true
+        else
+            log("ERROR: Unable to apply workspace edit for document with uri", documentUri)
+        end
+    end
+    return success
+end
 
 function editBuf(buf, textedits)
     -- sort edits by start position (earliest first)
@@ -1518,6 +1596,54 @@ function showReferenceLocations(newBufferTitle, lspLocations)
         onEnter = onEnter,
         onTab = onTab,
         labels = bufLines
+    }:open()
+end
+
+function showCodeActions(client, actions)
+    local labels = {}
+    local onEnter = {}
+    -- actions can be either Command[] or CodeAction[]
+    for _, action in ipairs(actions) do
+        local cmd = type(action.command) == "string" and action or action.command
+        if action.disabled ~= nil then
+            table.insert(labels, string.format("%s (disabled: %s)", action.title, action.disabled.reason))
+        else
+            local label = action.title
+            table.insert(labels, label)
+            onEnter[label] = function (bp)
+                local edited = false
+                if action.edit ~= nil then
+                    -- according to the spec workspace edit must be executed
+                    -- before running the command
+                    if editWorkspace(action.edit) then
+                        edited = true
+                    end
+                end
+                if commandId ~= nil then
+                    local buf = bufpane.Buf
+                    local cursor = buf:GetActiveCursor()
+                    client:request("workspace/executeCommand", {
+                        command = cmd.command,
+                        arguments = cmd.arguments
+                    })
+                end
+                bp:Quit()
+                -- TODO: figure out a way to do this without micro.After
+                -- (without delay the message gets lost somewhere)
+                if edited and micro.After then
+                    local delay, _ = go_time.ParseDuration("10ms")
+                    micro.After(delay, function ()
+                        display_info(string.format("Applied '%s'", action.title))
+                    end)
+                end
+            end
+        end
+    end
+    menu.new{
+        name = "[µlsp] Code actions",
+        header = "Code actions (press Enter to select)\n",
+        labels = labels,
+        onEnter = onEnter
     }:open()
 end
 
