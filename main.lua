@@ -999,7 +999,10 @@ function onExit(text, userargs)
 end
 
 function onSetActive(bp)
-    bp.Buf:ClearMessages("µlsp-focus")
+    -- bp is nil for the `raw` buffer
+    if bp ~= nil then
+        bp.Buf:ClearMessages("µlsp-focus")
+    end
 end
 
 function onBufferOpen(buf)
