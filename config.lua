@@ -33,6 +33,11 @@ local defaultLanguageServerOptions = {
 -- define your own servers to be used in settings at the bottom of this file.
 -- See defaultLanguageServerOptions above for the available options.
 languageServer = {
+    biome = {
+        cmd = "biome",
+        args = {"lsp-proxy"},
+        filetypes = {"javascript", "typescript", "json", "css", "html", "vue", "svelte"}
+    },
     clangd = {
         cmd = "clangd",
         filetypes = {"c", "cpp", "objc", "cuda", "proto"}
@@ -74,6 +79,11 @@ languageServer = {
         shortName = "luals",
         cmd = "lua-language-server",
         filetypes = {"lua"}
+    },
+    marksman = {
+        cmd = "marksman",
+        args = {"server"},
+        filetypes = {"markdown"}
     },
     pylsp = {
         cmd = "pylsp",

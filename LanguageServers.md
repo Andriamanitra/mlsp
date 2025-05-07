@@ -48,6 +48,11 @@
 
 ## JavaScript/TypeScript
 
+- [biome](https://github.com/biomejs/biome)
+  - Installation:
+    [instructions](https://biomejs.dev/guides/getting-started/#installation)
+  - Command: `biome lsp-proxy`
+
 - [deno](https://github.com/denoland/deno)
   - Installation:
     [instructions](https://github.com/denoland/deno_install/blob/master/README.md#deno_install)
@@ -83,6 +88,10 @@
   - Installation:
     [instructions](https://github.com/denoland/deno_install/blob/master/README.md#deno_install)
   - Command: `deno lsp`
+- [marksman](https://github.com/artempyanykh/marksman)
+  - Installation:
+    [instructions](https://github.com/artempyanykh/marksman/blob/main/docs/install.md)
+  - Command: `marksman server`
 
 ## Python
 
