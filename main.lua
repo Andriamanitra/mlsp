@@ -10,9 +10,6 @@ local go_strings = import("strings")
 local go_time = import("time")
 local filepath = import("path/filepath")
 
-local settings = settings
-local json = json
-
 local activeConnections = {}
 local allConnections = {}
 setmetatable(allConnections, { __index = function (_, k) return activeConnections[k] end })
@@ -33,6 +30,7 @@ function init()
     local subcommands = {
         ["start"]               = startServer,
         ["stop"]                = stopServers,
+        ["code-actions"]        = codeActionsAction,
         ["diagnostic-info"]     = openDiagnosticBufferAction,
         ["document-symbols"]    = documentSymbolsAction,
         ["find-references"]     = findReferencesAction,
@@ -211,7 +209,7 @@ function showLog(bufpane, args)
     local newBuffer = buffer.NewBuffer(foundClient.stderr, title)
 
     newBuffer:SetOption("filetype", "text")
-    newBuffer.Type.scratch = true
+    newBuffer.Type.Scratch = true
     newBuffer.Type.Readonly = true
 
     micro.CurPane():HSplitBuf(newBuffer)
@@ -268,7 +266,27 @@ function LSPClient:initialize(server)
                         documentationFormat = {},
                     },
                     contextSupport = true
+                },
+                codeAction = {
+                    disabledSupport = true,
+                    codeActionLiteralSupport = {
+                        codeActionKind = {
+                            valueSet = {
+                                "",
+                                "quickfix",
+                                "refactor",
+                                "refactor.extract",
+                                "refactor.inline",
+                                "refactor.rewrite",
+                                "source",
+                                "source.organizeImports"
+                            }
+                        }
+                    }
                 }
+            },
+            workspace = {
+                applyEdit = true
             }
         }
     }
@@ -523,50 +541,15 @@ function LSPClient:handleResponseResult(method, result)
             display_info("No symbols found in current document")
             return
         end
-        local symbolLocations = {}
-        local symbolLabels = {}
-        local SYMBOLKINDS = {
-	        [1] = "File",
-	        [2] = "Module",
-	        [3] = "Namespace",
-	        [4] = "Package",
-	        [5] = "Class",
-	        [6] = "Method",
-	        [7] = "Property",
-	        [8] = "Field",
-	        [9] = "Constructor",
-	        [10] = "Enum",
-	        [11] = "Interface",
-	        [12] = "Function",
-	        [13] = "Variable",
-	        [14] = "Constant",
-	        [15] = "String",
-	        [16] = "Number",
-	        [17] = "Boolean",
-	        [18] = "Array",
-	        [19] = "Object",
-	        [20] = "Key",
-	        [21] = "Null",
-	        [22] = "EnumMember",
-	        [23] = "Struct",
-	        [24] = "Event",
-	        [25] = "Operator",
-	        [26] = "TypeParameter",
-        }
-        for _, sym in ipairs(result) do
-            -- if sym.location is missing we are dealing with DocumentSymbol[]
-            -- instead of SymbolInformation[]
-            if sym.location == nil then
-                table.insert(symbolLocations, {
-                    uri = micro.CurPane().Buf.AbsPath,
-                    range = sym.range
-                })
-            else
-                table.insert(symbolLocations, sym.location)
-            end
-            table.insert(symbolLabels, string.format("%-15s %s", "["..SYMBOLKINDS[sym.kind].."]", sym.name))
+        showSymbolLocations(result)
+    elseif method == "textDocument/codeAction" then
+        if result == nil or table.empty(result) then
+            display_info("No code actions found for current cursor")
+            return
         end
-        showSymbolLocations("[µlsp] document symbols", symbolLocations, symbolLabels)
+        showCodeActions(self, result)
+    elseif method == "workspace/executeCommand" then
+        log("executed command, received:", result)
     else
         log("WARNING: dunno what to do with response to", method)
     end
@@ -610,13 +593,33 @@ end
 
 function LSPClient:handleRequest(request)
     if request.method == "window/showMessageRequest" then
-        if request.params.type == MessageType.Error then
+        if request.params.actions ~= nil then
+            local labels = {}
+            local onEnter = {}
+            for idx, action in ipairs(request.params.actions) do
+                local label = string.format("%d) %s", idx, action.title)
+                table.insert(labels, label)
+                onEnter[label] = function (bp)
+                    self:responseResult(request.id, action)
+                    bp:Quit()
+                end
+            end
+            menu.new{
+                header = string.format("%s\n\nAvailable actions (press Enter to select):", request.params.message),
+                labels = labels,
+                onEnter = onEnter
+            }:open()
+            -- FIXME: the spec says we should send null response if user selected nothing
+            -- so we need some way to tell if user quit the menu without selecting anything
+            --self:responseResult(request.id, json.null)
+        elseif request.params.type == MessageType.Error then
             display_error(request.params.message)
         elseif request.params.type == MessageType.Warning then
             display_info(request.params.message)
         end
-        -- TODO: make it possible to respond with one of request.params.actions
-        self:responseResult(request.id, json.null)
+    elseif request.method == "workspace/applyEdit" then
+        local success = editWorkspace(request.params.edit)
+        self:responseResult(request.id, { applied = success })
     else
         log("WARNING: don't know what to do with that request")
     end
@@ -882,6 +885,42 @@ function documentSymbolsAction(bufpane)
     end
 end
 
+function codeActionsAction(bufpane)
+    local client = findClient(bufpane.Buf:FileType(), "codeActionProvider", "code actions")
+    if client ~= nil then
+        local buf = bufpane.Buf
+        local cursor = buf:GetActiveCursor()
+        local range = nil
+        if cursor:HasSelection() then
+            range = LSPRange.fromSelection(cursor.CurSelection)
+        else
+            range = {
+                ["start"] = { line = cursor.Y, character = cursor.X },
+                ["end"]   = { line = cursor.Y, character = cursor.X }
+            }
+        end
+
+        local filePath = buf.AbsPath
+        local allDiagnostics = client.openFiles[filePath].diagnostics
+        local diagnostics = {}
+        for _, diag in ipairs(allDiagnostics) do
+            if diag.range["start"].line <= cursor.Y and cursor.Y <= diag.range["end"].line then
+                table.insert(diagnostics, diag)
+            end
+        end
+
+        client:request("textDocument/codeAction", {
+            textDocument = client:textDocumentIdentifier(buf),
+            range = range,
+            context = {
+                diagnostics = diagnostics,
+                -- 1 = invoked by user, 2 = triggered automatically
+                triggerKind = 1
+            }
+        })
+    end
+end
+
 function openDiagnosticBufferAction(bufpane)
     local buf = bufpane.Buf
     local cursor = buf:GetActiveCursor()
@@ -957,6 +996,13 @@ function onExit(text, userargs)
     end
     activeConnections[clientId] = nil
     allConnections[clientId] = nil
+end
+
+function onSetActive(bp)
+    -- bp is nil for the `raw` buffer
+    if bp ~= nil then
+        bp.Buf:ClearMessages("µlsp-focus")
+    end
 end
 
 function onBufferOpen(buf)
@@ -1047,7 +1093,12 @@ function preAutocomplete(bufpane)
     end
 end
 
+function preInsertNewline(bufpane)
+    menu.preInsertNewline(bufpane)
+end
+
 function preInsertTab(bufpane)
+    menu.preInsertTab(bufpane)
     if next(activeConnections) == nil then return end
     if not settings.tabAutocomplete then return end
     if findClient(bufpane.Buf:FileType(), "completionProvider") == nil then return end
@@ -1178,6 +1229,52 @@ function table.empty(x)
     return type(x) == "table" and next(x) == nil
 end
 
+
+function editWorkspace(workspaceEdit)
+    -- https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#workspaceEdit
+    -- workspaceEdit contains either:
+    -- * changes?: { [uri: DocumentUri]: TextEdit[]; };
+    -- OR
+    -- * documentChanges?: (TextDocumentEdit | CreateFile | RenameFile | DeleteFile)[]
+
+    local function findBufByDocumentUri(documentUri)
+        local fpath = absPathFromFileUri(documentUri)
+        for tabIdx, paneIdx, bp in bufpaneIterator() do
+            if fpath == bp.Buf.AbsPath then
+                return bp.Buf
+            end
+        end
+        return nil
+    end
+
+    local success = false
+    for documentUri, textedits in pairs(workspaceEdit.changes or {}) do
+        local buf = findBufByDocumentUri(documentUri)
+        if buf ~= nil then
+            editBuf(buf, textedits)
+            success = true
+        else
+            log("ERROR: Unable to apply workspace edit for document with uri", documentUri)
+        end
+    end
+
+    for _, textDocumentEdit in ipairs(workspaceEdit.documentChanges or {}) do
+        if textDocumentEdit.kind ~= nil then
+            -- FIXME: support CreateFile, RenameFile, DeleteFile
+            log("WARNING: Skipping unsupported textDocumentEdit:", textDocumentEdit.kind)
+        else    
+            local buf = findBufByDocumentUri(textDocumentEdit.textDocument.uri)
+            if buf ~= nil then
+                editBuf(buf, textDocumentEdit.edits)
+                success = true
+            else
+                log("ERROR: Unable to apply workspace edit for textdocument", textDocumentEdit.textDocument)
+            end
+        end
+    end
+
+    return success
+end
 
 function editBuf(buf, textedits)
     -- sort edits by start position (earliest first)
@@ -1340,7 +1437,8 @@ function relPathFromAbsPath(absPath)
     return relPath
 end
 
-function openFileAtLoc(filepath, loc)
+function openFileAtLoc(filepath, loc, keepFocus)
+    local originalbp = micro.CurPane()
     -- don't open a new tab if file is already open
     local function openExistingBufPane(fpath)
         for tabIdx, paneIdx, bp in bufpaneIterator() do
@@ -1370,35 +1468,100 @@ function openFileAtLoc(filepath, loc)
     cursor:GotoLoc(loc)
     bp.Buf:RelocateCursors() -- make sure cursor is inside the buffer
     bp:Center()
+    if keepFocus then
+        for tabIdx, paneIdx, x in bufpaneIterator() do
+            if originalbp == x then
+                micro.Tabs():SetActive(tabIdx)
+                originalbp:tab():SetActive(paneIdx)
+                return bp
+            end
+        end
+    end
+    return bp
 end
+
+function focusLocation(fpath, loc)
+    local keepFocus = true
+    local openedbp = openFileAtLoc(fpath, loc, keepFocus)
+    openedbp.Buf:ClearMessages("µlsp-focus")
+    openedbp.Buf:AddMessage(buffer.NewMessage("µlsp-focus", "", loc, loc, buffer.MTInfo))
+end
+
 
 -- takes Location[] https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#location
 -- and renders them to user
-function showSymbolLocations(newBufferTitle, lspLocations, labels)
-    local symbols = {}
-    local maxLabelLen = 0
-    for i, lspLoc in ipairs(lspLocations) do
-        local fpath = absPathFromFileUri(lspLoc.uri)
-        local lineNumber = lspLoc.range.start.line + 1
-        local columnNumber = lspLoc.range.start.character + 1
-        local labelLen = #labels[i]
-        symbols[i] = {
-            label = labels[i],
-            location = string.format("%s:%d:%d\n", fpath, lineNumber, columnNumber)
-        }
-        if maxLabelLen < labelLen then maxLabelLen = labelLen end
-    end
+function showSymbolLocations(symbols)
+    local SYMBOLKINDS = {
+        [1] = "File",
+        [2] = "Module",
+        [3] = "Namespace",
+        [4] = "Package",
+        [5] = "Class",
+        [6] = "Method",
+        [7] = "Property",
+        [8] = "Field",
+        [9] = "Constructor",
+        [10] = "Enum",
+        [11] = "Interface",
+        [12] = "Function",
+        [13] = "Variable",
+        [14] = "Constant",
+        [15] = "String",
+        [16] = "Number",
+        [17] = "Boolean",
+        [18] = "Array",
+        [19] = "Object",
+        [20] = "Key",
+        [21] = "Null",
+        [22] = "EnumMember",
+        [23] = "Struct",
+        [24] = "Event",
+        [25] = "Operator",
+        [26] = "TypeParameter",
+    }
 
-    local bufContents = ""
-    local format = "%-" .. maxLabelLen .. "s # %s"
+    local colWidths = {5, 5}
     for _, sym in ipairs(symbols) do
-        bufContents = bufContents .. string.format(format, sym.label, sym.location)
+        if sym.location == nil then -- symbols is DocumentSymbol[]
+            -- FIXME: if user manages to change pane after initiating the request
+            -- buf before the server responds this path could be wrong
+            sym.fpath = micro.CurPane().Buf.AbsPath
+        else -- symbols is (deprecated) SymbolInformation[]
+            sym.fpath = absPathFromFileUri(sym.location.uri)
+            sym.range = sym.location.range
+        end
+
+        sym.kind = string.format("[%s]", SYMBOLKINDS[sym.kind])
+        if colWidths[1] < #sym.kind then colWidths[1] = #sym.kind end
+        if colWidths[2] < #sym.name then colWidths[2] = #sym.name end
     end
 
-    local newBuffer = buffer.NewBuffer(bufContents, newBufferTitle)
-    newBuffer.Type.Scratch = true
-    newBuffer.Type.Readonly = true
-    micro.CurPane():HSplitBuf(newBuffer)
+    local labels = {}
+    local onEnter = {}
+    local onTab = {}
+    local fmt = "%-" .. colWidths[1] .. "s %-" .. colWidths[2] .. "s  %s:%d"
+
+    for _, sym in ipairs(symbols) do
+        local loc = buffer.Loc(sym.range.start.character, sym.range.start.line)
+        local label = string.format(fmt, sym.kind, sym.name, sym.fpath, sym.range.start.line + 1)
+
+        table.insert(labels, label)
+        onEnter[label] = function (bp)
+            openFileAtLoc(sym.fpath, loc)
+            bp:Quit()
+        end
+        onTab[label] = function ()
+            focusLocation(sym.fpath, loc)
+        end
+    end
+
+    menu.new{
+        name = "[µlsp] Document symbols",
+        header = "Document symbols (press Enter to jump, Tab to preview)\n",
+        labels = labels,
+        onEnter = onEnter,
+        onTab = onTab
+    }:open()
 end
 
 -- takes Location[] https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#location
@@ -1422,6 +1585,8 @@ function showReferenceLocations(newBufferTitle, lspLocations)
         return a.column < b.column
     end)
 
+    local onEnter = {}
+    local onTab = {}
     local bufLines = {}
     local curFilePath = ""
     local file = nil
@@ -1433,6 +1598,13 @@ function showReferenceLocations(newBufferTitle, lspLocations)
             if #bufLines > 0 then table.insert(bufLines, "") end
             curFilePath = ref.path
             table.insert(bufLines, curFilePath)
+            onEnter[curFilePath] = function (bp)
+                openFileAtLoc(curFilePath, buffer.Loc(0, 0))
+                bp:Quit()
+            end
+            onTab[curFilePath] = function ()
+                focusLocation(curFilePath, buffer.Loc(0, 0))
+            end
             file = io.open(curFilePath, "rb")
             lineCount = 0
         end
@@ -1444,18 +1616,74 @@ function showReferenceLocations(newBufferTitle, lspLocations)
                 lineCount = lineCount + 1
             end
         end
-        table.insert(bufLines, string.format("\t%d:%d:%s", ref.line, ref.column, lineContent or ""))
+        local line = string.format("%6d│%s", ref.line, lineContent or "")
+        onEnter[line] = function (bp)
+            openFileAtLoc(curFilePath, buffer.Loc(ref.column - 1, ref.line - 1))
+            bp:Quit()
+        end
+        onTab[line] = function ()
+            focusLocation(curFilePath, buffer.Loc(ref.column - 1, ref.line - 1))
+        end
+        table.insert(bufLines, line)
     end
 
     if file then file:close() end -- last iteration does not close last file
-    table.insert(bufLines, "")
 
-    local newBuffer = buffer.NewBuffer(table.concat(bufLines, "\n"), newBufferTitle)
-    newBuffer.Type.Scratch = true
-    newBuffer.Type.Readonly = true
-    --We enforce tabs, dont annoy users
-    newBuffer.Settings["hltaberrors"] = false
-    micro.CurPane():HSplitBuf(newBuffer)
+    menu.new{
+        name = "[µlsp] References",
+        header = "References (press Enter to jump, Tab to preview)\n",
+        onEnter = onEnter,
+        onTab = onTab,
+        labels = bufLines
+    }:open()
+end
+
+function showCodeActions(client, actions)
+    local labels = {}
+    local onEnter = {}
+    -- actions can be either Command[] or CodeAction[]
+    for _, action in ipairs(actions) do
+        if action.disabled ~= nil then
+            table.insert(labels, string.format("%s (disabled: %s)", action.title, action.disabled.reason))
+        else
+            local label = action.title
+            table.insert(labels, label)
+            onEnter[label] = function (bp)
+                local edited = false
+                if action.edit ~= nil then
+                    -- according to the spec workspace edit must be executed
+                    -- before running the command
+                    if editWorkspace(action.edit) then
+                        edited = true
+                    end
+                end
+                local command = action.command ~= nil and action.command.command or action.command
+                if command then
+                    local buf = bufpane.Buf
+                    local cursor = buf:GetActiveCursor()
+                    client:request("workspace/executeCommand", {
+                        command = command,
+                        arguments = action.arguments or action.command.arguments
+                    })
+                end
+                bp:Quit()
+                -- TODO: figure out a way to do this without micro.After
+                -- (without delay the message gets lost somewhere)
+                if edited and micro.After then
+                    local delay, _ = go_time.ParseDuration("10ms")
+                    micro.After(delay, function ()
+                        display_info(string.format("Applied '%s'", action.title))
+                    end)
+                end
+            end
+        end
+    end
+    menu.new{
+        name = "[µlsp] Code actions",
+        header = "Code actions (press Enter to select)\n",
+        labels = labels,
+        onEnter = onEnter
+    }:open()
 end
 
 function bufpaneIterator()
