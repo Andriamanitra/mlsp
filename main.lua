@@ -1052,8 +1052,8 @@ function preInsertTab(bufpane)
     if not settings.tabAutocomplete then return end
     if findClient(bufpane.Buf:FileType(), "completionProvider") == nil then return end
 
-    local word, wordStartX = bufpane.Buf:GetWord()
-    if wordStartX >= 0 then
+    local word = bufpane.Buf:GetWord()
+    if #word > 0 then
         return false -- returning false prevents tab from being inserted
     end
 end
