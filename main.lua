@@ -478,7 +478,7 @@ function LSPClient:handleResponseResult(method, result)
 
         if #completions == 0 then
             -- fall back to micro's built-in completer
-            micro.CurPane():Autocomplete()
+            forceMicroAutocompleteChain()
         else
             -- turn completions into Completer function for micro
             -- https://pkg.go.dev/github.com/zyedidia/micro/v2/internal/buffer#Completer
@@ -641,6 +641,9 @@ function LSPClient:receiveMessage(text)
         local request = self.sentRequests[decodedMsg.id]
         self.sentRequests[decodedMsg.id] = nil
         display_info(string.format("No result for %s", request))
+        if request == "textDocument/completion" then
+            forceMicroAutocompleteChain()
+        end
     else
         log("WARNING: unrecognized message type")
     end
@@ -1495,4 +1498,15 @@ function keyIterator(dict)
         key = next(dict, key)
         if key then return idx, key end
     end
+end
+
+function forceMicroAutocompleteChain()
+    -- NOTE: Autocomplete() does not trigger more callbacks.
+    -- In case of failure, we have to perform the proper action.
+    -- Default sequence for micro is: "Tab": "Autocomplete|IndentSelection|InsertTab"
+    -- IndentSelection only works if there is a selection, and that makes
+    -- Autocomplete fail directly, so it works fine. Also, IndentSelection will
+    -- not invoke any callbacks either. Directly invoke InsertTab.
+    local bp = micro.CurPane()
+    if not bp:Autocomplete() then bp:InsertTab() end
 end
