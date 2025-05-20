@@ -13,6 +13,8 @@ local filepath = import("path/filepath")
 local settings = settings
 local json = json
 
+local SnippetTabstopper = nil
+
 local activeConnections = {}
 local allConnections = {}
 setmetatable(allConnections, { __index = function (_, k) return activeConnections[k] end })
@@ -28,7 +30,17 @@ local MessageType = {
     Debug   = 5,
 }
 
+---@type SnippetTabstopper?
+local tabstopper = nil
+
 function init()
+    local plugDirPath = config.ConfigDir .. "/plug/?.lua;"
+    if string.find(package.path, plugDirPath, 1, true) == nil then
+        package.path = plugDirPath .. package.path
+    end
+    -- While the project directory is called 'mlsp' we're fine; as 'repo.json' is not used.
+    SnippetTabstopper = require("mlsp.snippet_tabstop")
+
     -- ordering of the table affects the autocomplete suggestion order
     local subcommands = {
         ["start"]               = startServer,
@@ -443,7 +455,10 @@ function LSPClient:handleResponseResult(method, result)
 
         table.sort(completionitems, bySortText)
 
-        local buf = micro.CurPane().Buf
+        local bufpane = micro.CurPane()
+        local buf = bufpane.Buf
+        local lineInBytes = buf:LineBytes(buf:GetActiveCursor().Y)
+        local indent = util.GetLeadingWhitespace(lineInBytes)
         local wordbytes, _ = buf:GetWord()
         local stem = util.String(wordbytes)
 
@@ -460,7 +475,13 @@ function LSPClient:handleResponseResult(method, result)
                 if i > 1 and completionitems[i-1].label == item.label then
                     -- skip duplicate
                 elseif item.insertTextFormat == InsertTextFormat.Snippet then
-                    -- TODO: support snippets
+                    table.insert(labels, item.label)
+                    local insertText = item.insertText or item.label
+                    insertText = select(
+                        1, insertText:gsub("^" .. stem, ""):gsub("\n", "\n" .. indent)
+                    )
+                    table.insert(completions, insertText)
+
                 elseif item.additionalTextEdits then
                     -- TODO: support additionalTextEdits (eg. adding an import on autocomplete)
                 else
@@ -480,10 +501,13 @@ function LSPClient:handleResponseResult(method, result)
             -- fall back to micro's built-in completer
             micro.CurPane():Autocomplete()
         else
+            local startLoc = -bufpane.Cursor.Loc -- save position before Autocomplete
             -- turn completions into Completer function for micro
             -- https://pkg.go.dev/github.com/zyedidia/micro/v2/internal/buffer#Completer
-            local completer = function (buf) return completions, labels end
+            local completer = function () return completions, labels end
             buf:Autocomplete(completer)
+            local endLoc = -bufpane.Cursor.Loc
+            tabstopper = SnippetTabstopper.new(bufpane, startLoc, endLoc)
         end
 
     elseif method == "textDocument/references" then
@@ -1026,6 +1050,10 @@ function onSave(bufpane)
 end
 
 function preAutocomplete(bufpane)
+    if tabstopper and tabstopper:isBufPane(bufpane) then
+        return performTabstop(tabstopper, bufpane, true--[[searchDown]])
+    end
+
     if not settings.tabAutocomplete then return end
     -- use micro's own autocompleter if there is no LSP connection
     if next(activeConnections) == nil then return end
@@ -1047,7 +1075,18 @@ function preAutocomplete(bufpane)
     end
 end
 
+function onAutocomplete(bufpane)
+    updateEndLoc(tabstopper, bufpane)
+end
+
+function preIndentSelection(bufpane)
+    -- cancels the action while cycling through tabstops
+    if tabstopper and tabstopper:isBufPane(bufpane) then return false end
+end
+
 function preInsertTab(bufpane)
+    -- cancels the action when inside the snippet region and no text or tabstop is selected
+    if tabstopper and tabstopper:isBufPane(bufpane) then return false end
     if next(activeConnections) == nil then return end
     if not settings.tabAutocomplete then return end
     if findClient(bufpane.Buf:FileType(), "completionProvider") == nil then return end
@@ -1058,7 +1097,24 @@ function preInsertTab(bufpane)
     end
 end
 
--- FIXME: figure out how to disable all this garbage when there are no active connections
+function preCycleAutocompleteBack(bufpane)
+    if tabstopper and tabstopper:isBufPane(bufpane) then
+        return performTabstop(tabstopper, bufpane, false--[[searchDown]])
+    end
+end
+
+function onCycleAutocompleteBack(bufpane)
+    updateEndLoc(tabstopper, bufpane)
+end
+
+function preOutdentSelection(bufpane)
+    -- cancels the action while cycling through tabstops.
+    if tabstopper and tabstopper:isBufPane(bufpane) then return false end
+end
+-- NOTE: OutdentLine() is not an issue because a tab stop will be selected, and
+-- OutdentLine() cancels the action when there is a selection.
+
+--- FIXME: figure out how to disable all this garbage when there are no active connections
 
 function onBeforeTextEvent(buf, tevent)
     if next(activeConnections) == nil then return end
@@ -1494,5 +1550,22 @@ function keyIterator(dict)
         idx = idx + 1
         key = next(dict, key)
         if key then return idx, key end
+    end
+end
+
+function performTabstop(tabstopper, bufpane, searchDown)
+    if not bufpane.Buf.HasSuggestions then
+        if tabstopper:nextTabstop(bufpane, searchDown) then
+            return false -- cancel the autocomplete event if nextTabstops() was performed
+        end
+    end
+    return true -- continue the action when: no tabstop was performed or there were no suggestions
+end
+
+function updateEndLoc(tabstopper, bufpane)
+   if tabstopper and tabstopper:isBufPane(bufpane) then
+        --update tabstopper.endLoc with the current location (end of the new completion)
+        assert(bufpane.Buf.HasSuggestions == true)
+        tabstopper.endLoc = -bufpane.Cursor.Loc
     end
 end
