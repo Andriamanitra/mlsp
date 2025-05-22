@@ -119,6 +119,10 @@ local LSPRange = {
     toLocs = function(range)
         local a, b = range["start"], range["end"]
         return buffer.Loc(a.character, a.line), buffer.Loc(b.character, b.line)
+    end,
+    startEqualEnd = function(range)
+        local s, e = range["start"], range["end"]
+        return s.character == e.character and s.line == e.line
     end
 }
 
@@ -394,20 +398,31 @@ function LSPClient:handleResponseResult(method, result)
         else
             display_info("WARNING: Ignored textDocument/hover result due to unrecognized format")
         end
+
+    --- TODO merge textDocument/formatting and textDocument/rangeFormatting?? Same response
     elseif method == "textDocument/formatting" then
         if result == nil or next(result) == nil then
             display_info("Formatted file (no changes)")
         else
             local textedits = result
-            editBuf(micro.CurPane().Buf, textedits)
+            applyLSPTextEdits(micro.CurPane().Buf, textedits)
             display_info("Formatted file")
         end
     elseif method == "textDocument/rangeFormatting" then
         if result == nil or next(result) == nil then
             display_info("Formatted selection (no changes)")
         else
+            local bufpane = micro.CurPane()
+            local buf = bufpane.Buf
+            local cursor = buf:GetActiveCursor()
+            -- maybe there is a nice way to keep multicursors and selections? for now let's
+            -- just get rid of them before editing the buffer to avoid weird behavior
+            buf:ClearCursors()
+            cursor:Deselect(true)
+            cursor = -cursor -- To keep the value
             local textedits = result
-            editBuf(micro.CurPane().Buf, textedits)
+            applyLSPTextEdits(buf, textedits)
+            bufpane:GotoLoc(cursor.Loc)
             display_info("Formatted selection")
         end
     elseif method == "textDocument/completion" then
@@ -562,7 +577,7 @@ function LSPClient:handleResponseResult(method, result)
             return
         end
         -- TODO handle result.documentChanges
-        renameSymbol(result)
+        applyLSPChanges(result.changes)
     else
         log("WARNING: dunno what to do with response to", method)
     end
@@ -1126,10 +1141,12 @@ function onRedo(bp)
     return handleUndosRedos(bp.Buf, bp.Buf.UndoStack.Top, numRedos)
 end
 
+---@enum TEXT_EVENT
+local TEXT_EVENT = {INSERT = 1, REMOVE = -1, REPLACE = 0}
+
 function handleUndosRedos(buf, elem, numChanges)
     if next(activeConnections) == nil then return end
 
-    local TEXT_EVENT = {INSERT = 1, REMOVE = -1, REPLACE = 0}
     local tevents = {}
     for i = 1, numChanges do
         table.insert(tevents, elem.Value)
@@ -1197,64 +1214,6 @@ end
 
 function table.empty(x)
     return type(x) == "table" and next(x) == nil
-end
-
-
-function editBuf(buf, textedits)
-    -- sort edits by start position (earliest first)
-    local function sortByRangeStart(texteditA, texteditB)
-        local a = texteditA.range.start
-        local b = texteditB.range.start
-        return a.line < b.line or (a.line == b.line and a.character < b.character)
-    end
-    -- FIXME: table.sort is not guaranteed to be stable, and the LSP specification
-    -- says that if two edits share the same start position the order in the array
-    -- should dictate the order, so this is probably bugged in rare edge cases...
-    table.sort(textedits, sortByRangeStart)
-
-    local cursor = buf:GetActiveCursor()
-
-    -- maybe there is a nice way to keep multicursors and selections? for now let's
-    -- just get rid of them before editing the buffer to avoid weird behavior
-    buf:ClearCursors()
-    cursor:Deselect(true)
-
-    -- using byte offset seems to be the easiest & most reliable way to keep cursor
-    -- position even when lines get added/removed
-    local cursorLoc = buffer.Loc(cursor.Loc.X, cursor.Loc.Y)
-    local cursorByteOffset = buffer.ByteOffset(cursorLoc, buf)
-
-    local editedBufParts = {}
-
-    local prevEnd = buf:Start()
-
-    for _, textedit in pairs(textedits) do
-        local startLoc, endLoc = LSPRange.toLocs(textedit.range)
-        if endLoc:GreaterThan(buf:End()) then
-            endLoc = buf:End()
-        end
-
-        table.insert(editedBufParts, util.String(buf:Substr(prevEnd, startLoc)))
-        table.insert(editedBufParts, textedit.newText)
-        prevEnd = endLoc
-
-        -- if the cursor is in the middle of a textedit this can move it a bit but it's fiiiine
-        -- (I don't think there's a clean way to figure out the right place for it)
-        if startLoc:LessThan(cursorLoc) then
-            local oldTextLength = buffer.ByteOffset(endLoc, buf) - buffer.ByteOffset(startLoc, buf)
-            cursorByteOffset = cursorByteOffset - oldTextLength + textedit.newText:len()
-        end
-    end
-
-    table.insert(editedBufParts, util.String(buf:Substr(prevEnd, buf:End())))
-
-    buf:Remove(buf:Start(), buf:End())
-    buf:Insert(buf:End(), go_strings.Join(editedBufParts, ""))
-
-    local newCursorLoc = buffer.Loc(0, 0):Move(cursorByteOffset, buf)
-    buf:GetActiveCursor():GotoLoc(newCursorLoc)
-
-    syncFullDocument(buf)
 end
 
 function severityToString(severity)
@@ -1476,34 +1435,6 @@ function showReferenceLocations(newBufferTitle, lspLocations)
     micro.CurPane():HSplitBuf(newBuffer)
 end
 
-function renameSymbol(results)
-    local changesToDeltas = function(deltas)
-        local ds = {}
-        for _, delta in ipairs(deltas) do
-            local text = delta.newText
-            local startLoc, endLoc = LSPRange.toLocs(delta.range)
-            table.insert(ds, { Text = text, Start = startLoc, End = endLoc })
-        end
-
-        -- sort Micro's deltas top to bottom and right to left
-        table.sort(ds, function (A, B)
-            local a, b = A.Start, B.Start
-            return a.Y < b.Y or (a.Y == b.Y and a.X > b.X)
-        end)
-
-        return ds
-    end
-
-    for fileUri, changes in pairs(results.changes) do
-        local absPath = absPathFromFileUri(fileUri)
-        local bufpane, _, _ = findBufPaneByPath(absPath)
-        if bufpane then
-            local deltas = changesToDeltas(changes)
-            bufpane.Buf:MultipleReplace(deltas)
-        end
-    end
-end
-
 function bufPaneGetSelectionOrWord(bufpane)
     if bufpane.Cursor:HasSelection() then
         return util.String(bufpane.Cursor:GetSelection())
@@ -1539,5 +1470,67 @@ function userdataIterator(data)
         idx = idx + 1
         local success, item = pcall(function() return data[idx] end)
         if success then return idx, item end
+    end
+end
+
+---@param buf Buffer
+---@param edits TextEdit[]
+function applyLSPTextEdits(buf, edits)
+    -- From https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textEditArray
+    -- "Text edits ranges must never overlap, that means no part of the original document must be manipulated by more than one edit. However, it is possible that multiple edits have the same start position: multiple inserts, or any number of inserts followed by a single remove or replace edit. If multiple inserts have the same position, the order in the array defines the order in which the inserted strings appear in the resulting text."
+
+    ---To avoid invalidating locations we sort bottom to top and right to left
+    ---@param A TextEdit
+    ---@param B TextEdit
+    ---@return boolean -- perform swap?
+    local function sortEditsLastFirst(A, B)
+        local as, bs = A.range.start, B.range.start
+        return as.line  > bs.line
+           or (as.line == bs.line and as.character >= bs.character)
+    end
+
+    ---Returns the kind of edit (TextEdit) for micro.
+    ---@param edit TextEdit
+    ---@return TEXT_EVENT -- Type of micro text event
+    local function textEditType(edit)
+        if edit.newText == "" then
+            return TEXT_EVENT.REMOVE
+        elseif LSPRange.startEqualEnd(edit.range) then
+            return TEXT_EVENT.INSERT
+        else
+            return TEXT_EVENT.REPLACE
+        end
+    end
+
+    table.sort(edits, sortEditsLastFirst)
+
+    for i, edit in ipairs(edits) do
+        local startLoc, endLoc = LSPRange.toLocs(edit.range)
+        micro.Log(i, "edit", edit)
+
+        local type = textEditType(edit)
+        if type == TEXT_EVENT.INSERT then
+            buf:Insert(startLoc, edit.newText)
+        elseif type == TEXT_EVENT.REMOVE then
+            buf:Remove(startLoc, endLoc)
+        elseif type == TEXT_EVENT.REPLACE then
+            buf:Replace(startLoc, endLoc, edit.newText)
+        else error("unreachable: invalid type") end
+    end
+end
+
+---@param changes WorkspaceEdit.changes
+function applyLSPChanges(changes)
+    for fileUri, edits in pairs(changes) do
+        local absPath = absPathFromFileUri(fileUri)
+        local bufpane, _, _ = findBufPaneByPath(absPath)
+
+        if bufpane then
+            -- TODO add support for new lines in `micro.MultipleReplace(deltas)`
+            applyLSPTextEdits(bufpane.Buf, edits)
+        else
+            -- TODO handle bufpane that are not opened!!!!!
+            micro.Log(("applyWorkspaceChanges: %s is not open"):format(absPath))
+        end
     end
 end
