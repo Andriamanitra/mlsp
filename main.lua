@@ -572,12 +572,18 @@ function LSPClient:handleResponseResult(method, result)
             display_info("No change was required for renameAction")
             return
         end
-        if result.changes == nil or table.empty(result.changes) then
+
+        --https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#workspaceEdit
+        --NOTE: "If the client can handle versioned document edits and if
+        --`documentChanges` are present, the latter are preferred over `changes`."
+        if result.documentChanges ~= nil and not table.empty(result.documentChanges) then
+            -- TODO handle result.documentChanges
+            display_error("'documentChanges' is not supported yet")
+        elseif result.changes ~= nil and not table.empty(result.changes) then
+            applyLSPChanges(result.changes)
+        else
             display_info("No changes received from client for renameAction")
-            return
         end
-        -- TODO handle result.documentChanges
-        applyLSPChanges(result.changes)
     else
         log("WARNING: dunno what to do with response to", method)
     end
@@ -834,35 +840,33 @@ function formatAction(bufpane)
 end
 
 function renameAction(bufpane, args)
-    local newName = ""
+    local client = findClient(bufpane.Buf:FileType(), "renameProvider", "rename")
+    if not client then return end
 
+    local buf = bufpane.Buf
+    if #buf:GetCursors() > 1 then
+        display_error("'rename' is not available for multiple cursors")
+        return
+    end
+
+    local cursor = buf:GetActiveCursor()
+    cursor:Deselect(true) -- selection isn't preserved; place the cursor at the start
+
+    local newName
     if #args > 0 then newName = args[1]
     else -- `lsp rename`
-        local word = bufPaneGetSelectionOrWord(bufpane)
-        if not word then
-            local cursor = bufpane.Cursor
-            word = string.format("symbol at (%d:%d)", cursor.Y + 1, cursor.X + 1)
-        end
-
-        local prompt = "[µlsp] rename " .. word .. " with: "
+        local prompt = ("[µlsp] rename symbol at (%d:%d) with: "):format(cursor.Y + 1, cursor.X + 1)
         micro.InfoBar():Prompt(prompt, "", "µlsp-rename-symbol", nil, function(str, canceled)
             if not canceled then renameAction(bufpane, {str}) end
         end)
         return
     end
 
-    bufpane.Cursor:Deselect(true)
-
-    local client = findClient(bufpane.Buf:FileType(), "renameProvider", "rename")
-    if client ~= nil then
-        local buf = bufpane.Buf
-        local cursor = buf:GetActiveCursor()
-        client:request("textDocument/rename", {
-            textDocument = client:textDocumentIdentifier(buf),
-            position = { line = cursor.Y, character = cursor.X },
-            newName = newName,
-        })
-    end
+    client:request("textDocument/rename", {
+        textDocument = client:textDocumentIdentifier(buf),
+        position = { line = cursor.Y, character = cursor.X },
+        newName = newName,
+    })
 end
 
 function completionAction(bufpane)
@@ -1435,22 +1439,6 @@ function showReferenceLocations(newBufferTitle, lspLocations)
     micro.CurPane():HSplitBuf(newBuffer)
 end
 
-function bufPaneGetSelectionOrWord(bufpane)
-    if bufpane.Cursor:HasSelection() then
-        return util.String(bufpane.Cursor:GetSelection())
-    else
-        local loc = -bufpane.Cursor.Loc
-
-        if util.IsWordChar(util.RuneAt(bufpane.Buf:LineBytes(loc.Y), loc.X)) then
-            bufpane.Cursor.Loc = loc
-            bufpane.Cursor:SelectWord()
-            return util.String(bufpane.Cursor:GetSelection())
-        else
-            return nil
-        end
-    end
-end
-
 function findBufPaneByPath(fpath)
     if fpath == nil then return nil end
     for tabIdx, tab in userdataIterator(micro.Tabs().List) do
@@ -1506,16 +1494,15 @@ function applyLSPTextEdits(buf, edits)
 
     for i, edit in ipairs(edits) do
         local startLoc, endLoc = LSPRange.toLocs(edit.range)
-        micro.Log(i, "edit", edit)
 
         local type = textEditType(edit)
         if type == TEXT_EVENT.INSERT then
             buf:Insert(startLoc, edit.newText)
         elseif type == TEXT_EVENT.REMOVE then
             buf:Remove(startLoc, endLoc)
-        elseif type == TEXT_EVENT.REPLACE then
+        else -- TEXT_EVENT.REPLACE
             buf:Replace(startLoc, endLoc, edit.newText)
-        else error("unreachable: invalid type") end
+        end
     end
 end
 
