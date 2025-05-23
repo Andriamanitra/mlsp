@@ -7,7 +7,7 @@ local buffer = import("micro/buffer")
 local util = import("micro/util")
 local go_os = import("os")
 local go_strings = import("strings")
-local filepath = import("path/filepath")
+local go_filepath = import("path/filepath")
 
 local settings = settings
 local json = json
@@ -1333,7 +1333,7 @@ function relPathFromAbsPath(absPath)
     local cwd, err = go_os.Getwd()
     if err then return absPath end
     local relPath
-    relPath, err = filepath.Rel(cwd, absPath)
+    relPath, err = go_filepath.Rel(cwd, absPath)
     if err then return absPath end
     return relPath
 end
