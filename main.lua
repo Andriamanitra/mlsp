@@ -7,8 +7,7 @@ local buffer = import("micro/buffer")
 local util = import("micro/util")
 local go_os = import("os")
 local go_strings = import("strings")
-local go_time = import("time")
-local filepath = import("path/filepath")
+local go_filepath = import("path/filepath")
 
 local settings = settings
 local json = json
@@ -131,7 +130,7 @@ local LSPRange = {
     end
 }
 
-function status(buf)
+function status(_buf)
     local servers = {}
     for _, client in pairs(activeConnections) do
         table.insert(servers, client.clientId)
@@ -187,9 +186,10 @@ function stopServers(_, args)
     end
 end
 
-function showLog(bufpane, args)
+function showLog(_, args)
     local hasArgs, name = pcall(function() return args[1] end)
 
+    local foundClient = nil
     for _, client in pairs(activeConnections) do
         if not hasArgs or client.name == name then
             foundClient = client
@@ -470,7 +470,7 @@ function LSPClient:handleResponseResult(method, result)
                     table.insert(labels, item.label)
 
                     local insertText = item.insertText or item.label
-                    local insertText, _ = insertText:gsub("^" .. stem, "")
+                    insertText = insertText:gsub("^" .. stem, "")
                     table.insert(completions, insertText)
                 end
             end
@@ -482,7 +482,7 @@ function LSPClient:handleResponseResult(method, result)
         else
             -- turn completions into Completer function for micro
             -- https://pkg.go.dev/github.com/zyedidia/micro/v2/internal/buffer#Completer
-            local completer = function (buf) return completions, labels end
+            local completer = function() return completions, labels end
             buf:Autocomplete(completer)
         end
 
@@ -513,10 +513,10 @@ function LSPClient:handleResponseResult(method, result)
             end
 
             -- now result should be Location
-            local filepath = absPathFromFileUri(result.uri)
+            local filePath = absPathFromFileUri(result.uri)
             local startLoc, _ = LSPRange.toLocs(result.range)
 
-            openFileAtLoc(filepath, startLoc)
+            openFileAtLoc(filePath, startLoc)
         end
     elseif method == "textDocument/documentSymbol" then
         if result == nil or table.empty(result) then
@@ -893,7 +893,7 @@ function openDiagnosticBufferAction(bufpane)
         if file then
             local diagnostics = file.diagnostics
             for idx, diagnostic in pairs(diagnostics) do
-                local startLoc, endLoc = LSPRange.toLocs(diagnostic.range)
+                local startLoc, _ = LSPRange.toLocs(diagnostic.range)
                 if cursor.Loc.Y == startLoc.Y then
                     found = true
                     local bufContents = string.format(
@@ -908,7 +908,7 @@ function openDiagnosticBufferAction(bufpane)
                     local newBuffer = buffer.NewBuffer(bufContents, bufTitle)
                     newBuffer.Type.Readonly = true
                     local height = bufpane:GetView().Height
-                    local newpane = micro.CurPane():HSplitBuf(newBuffer)
+                    micro.CurPane():HSplitBuf(newBuffer)
                     if height > 16 then
                         bufpane:ResizePane(height - 8)
                     end
@@ -940,7 +940,7 @@ function onStderr(text, userargs)
     client.stderr = client.stderr .. text
 end
 
-function onExit(text, userargs)
+function onExit(_text, userargs)
     local clientId = userargs[1]
     local client = allConnections[clientId]
     if client then
@@ -1036,7 +1036,7 @@ function preAutocomplete(bufpane)
         return true -- continue with autocomplete event
     end
 
-    local word, wordStartX = bufpane.Buf:GetWord()
+    local _, wordStartX = bufpane.Buf:GetWord()
     if wordStartX < 0 then
         return false -- cancel the autocomplete event if there is no word before cursor
     end
@@ -1052,7 +1052,7 @@ function preInsertTab(bufpane)
     if not settings.tabAutocomplete then return end
     if findClient(bufpane.Buf:FileType(), "completionProvider") == nil then return end
 
-    local word, wordStartX = bufpane.Buf:GetWord()
+    local _, wordStartX = bufpane.Buf:GetWord()
     if wordStartX >= 0 then
         return false -- returning false prevents tab from being inserted
     end
@@ -1076,7 +1076,7 @@ function onBeforeTextEvent(buf, tevent)
     end
 
     for _, client in pairs(activeConnections) do
-    	client:didChange(buf, changes)
+        client:didChange(buf, changes)
     end
 end
 
@@ -1117,7 +1117,7 @@ function handleUndosRedos(buf, elem, numChanges)
 
     local TEXT_EVENT = {INSERT = 1, REMOVE = -1, REPLACE = 0}
     local tevents = {}
-    for i = 1, numChanges do
+    for _ = 1, numChanges do
         table.insert(tevents, elem.Value)
         elem = elem.Next
     end
@@ -1139,7 +1139,7 @@ function handleUndosRedos(buf, elem, numChanges)
     end
 
     for _, client in pairs(activeConnections) do
-    	client:didChange(buf, changes)
+        client:didChange(buf, changes)
     end
 end
 
@@ -1269,8 +1269,6 @@ function showDiagnostics(buf, owner, diagnostics)
                 extraInfo = string.format("(%s) ", diagnostic.code)
             end
 
-            local lineNumber = diagnostic.range.start.line + 1
-
             local msgType = buffer.MTInfo
             if severity == "warning" then
                 msgType = buffer.MTWarning
@@ -1335,12 +1333,12 @@ function relPathFromAbsPath(absPath)
     local cwd, err = go_os.Getwd()
     if err then return absPath end
     local relPath
-    relPath, err = filepath.Rel(cwd, absPath)
+    relPath, err = go_filepath.Rel(cwd, absPath)
     if err then return absPath end
     return relPath
 end
 
-function openFileAtLoc(filepath, loc)
+function openFileAtLoc(filePath, loc)
     -- don't open a new tab if file is already open
     local function openExistingBufPane(fpath)
         for tabIdx, paneIdx, bp in bufpaneIterator() do
@@ -1352,9 +1350,9 @@ function openFileAtLoc(filepath, loc)
         end
     end
 
-    local bp = openExistingBufPane(filepath)
+    local bp = openExistingBufPane(filePath)
     if bp == nil then
-        local newBuf, err = buffer.NewBufferFromFile(filepath)
+        local newBuf, err = buffer.NewBufferFromFile(filePath)
         if err ~= nil then
             display_error(err)
             return
