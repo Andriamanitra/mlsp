@@ -70,10 +70,16 @@ local function SearchNextTabstop(self, searchDown)
 
     local fromLoc
     if cursor:HasSelection() then
-        fromLoc = searchDown and -cursor.CurSelection[2] or -cursor.CurSelection[1]
-    else
-        fromLoc = -cursor.Loc
+        if searchDown then
+            --Skip '$' to search for nested placeholders
+            cursor:Deselect(true) --cursor in startLoc
+            cursor:Right()
+        else
+            --skip closing '}'
+            cursor:Deselect(false) --cursor in endLoc
+        end
     end
+    fromLoc = -cursor.Loc
 
     local match, found, err = buf:FindNext(
         self._regex, self.startLoc, self.endLoc, fromLoc, searchDown, true -- use regex
