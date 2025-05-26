@@ -477,8 +477,9 @@ function LSPClient:handleResponseResult(method, result)
         end
 
         if #completions == 0 then
-            -- fall back to micro's built-in completer
-            forceMicroAutocompleteChain()
+            if settings.tabAutocomplete then -- fall back to micro's built-in completer
+                forceMicroAutocompleteChain()
+            end
         else
             -- turn completions into Completer function for micro
             -- https://pkg.go.dev/github.com/zyedidia/micro/v2/internal/buffer#Completer
@@ -641,7 +642,7 @@ function LSPClient:receiveMessage(text)
         local request = self.sentRequests[decodedMsg.id]
         self.sentRequests[decodedMsg.id] = nil
         display_info(string.format("No result for %s", request))
-        if request == "textDocument/completion" then
+        if request == "textDocument/completion" and settings.tabAutocomplete then
             forceMicroAutocompleteChain()
         end
     else
