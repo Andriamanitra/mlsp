@@ -27,6 +27,14 @@ local MessageType = {
     Debug   = 5,
 }
 
+-- https://github.com/zyedidia/micro/blob/bf255b6c353f6a8abf7b5520b5620c52b2f5f2fb/internal/buffer/eventhandler.go#L18-L23
+---@enum TextEventType
+local TextEventType = {
+    INSERT = 1,
+    REMOVE = -1,
+    REPLACE = 0
+}
+
 function init()
     -- ordering of the table affects the autocomplete suggestion order
     local subcommands = {
@@ -36,6 +44,7 @@ function init()
         ["document-symbols"]    = documentSymbolsAction,
         ["find-references"]     = findReferencesAction,
         ["format"]              = formatAction,
+        ["rename"]              = renameAction,
         ["goto-definition"]     = gotoAction("definition"),
         ["goto-declaration"]    = gotoAction("declaration"),
         ["goto-implementation"] = gotoAction("implementation"),
@@ -414,7 +423,7 @@ function LSPClient:handleResponseResult(method, result)
             display_info("Formatted file (no changes)")
         else
             local textedits = result
-            editBuf(micro.CurPane().Buf, textedits)
+            applyTextEdits(micro.CurPane().Buf, textedits)
             display_info("Formatted file")
         end
     elseif method == "textDocument/rangeFormatting" then
@@ -422,7 +431,7 @@ function LSPClient:handleResponseResult(method, result)
             display_info("Formatted selection (no changes)")
         else
             local textedits = result
-            editBuf(micro.CurPane().Buf, textedits)
+            applyTextEdits(micro.CurPane().Buf, textedits)
             display_info("Formatted selection")
         end
     elseif method == "textDocument/completion" then
@@ -567,6 +576,17 @@ function LSPClient:handleResponseResult(method, result)
             table.insert(symbolLabels, string.format("%-15s %s", "["..SYMBOLKINDS[sym.kind].."]", sym.name))
         end
         showSymbolLocations("[µlsp] document symbols", symbolLocations, symbolLabels)
+    elseif method == "textDocument/rename" then
+        if result == nil or table.empty(result) then
+            display_info("Renamed symbol (no changes required)")
+            return
+        end
+
+        if applyWorkspaceEdit(result) then
+            display_info("Renamed symbol")
+        else
+            display_error("Renaming symbol may not have worked properly")
+        end
     else
         log("WARNING: dunno what to do with response to", method)
     end
@@ -823,6 +843,43 @@ function formatAction(bufpane)
                 options = formatOptions
             })
         end
+    end
+end
+
+function renameAction(bufpane, args)
+    local client = findClient(bufpane.Buf:FileType(), "renameProvider", "rename")
+    if not client then return end
+
+    local buf = bufpane.Buf
+    if #buf:GetCursors() > 1 then
+        display_error("'rename' is not available for multiple cursors")
+        return
+    end
+
+    local cursor = buf:GetActiveCursor()
+    cursor:Deselect(true) -- selection isn't preserved; place the cursor at the start
+
+    local function renameTo(newName)
+        client:request("textDocument/rename", {
+            textDocument = client:textDocumentIdentifier(buf),
+            position = { line = cursor.Y, character = cursor.X },
+            newName = newName,
+        })
+    end
+
+    local newName
+    if #args > 0 then -- `lsp rename newName`
+        renameTo(args[1])
+    else -- `lsp rename`
+        micro.InfoBar():Prompt(
+            string.format("[µlsp] rename symbol at line %d column %d to: ", cursor.Y + 1, cursor.X + 1),
+            "", -- placeholder
+            "µlsp-rename-symbol", -- prompt type (prompts with same type share history)
+            nil, -- event callback
+            function(newName, canceled) -- done callback
+                if not canceled then renameTo(newName) end
+            end 
+        )
     end
 end
 
@@ -1115,7 +1172,6 @@ end
 function handleUndosRedos(buf, elem, numChanges)
     if next(activeConnections) == nil then return end
 
-    local TEXT_EVENT = {INSERT = 1, REMOVE = -1, REPLACE = 0}
     local tevents = {}
     for _ = 1, numChanges do
         table.insert(tevents, elem.Value)
@@ -1129,9 +1185,16 @@ function handleUndosRedos(buf, elem, numChanges)
             local text = ""
             local range = LSPRange.fromDelta(delta)
 
-            if tev.EventType == TEXT_EVENT.INSERT then
+            if tev.EventType == TextEventType.INSERT then
                 range["end"] = range["start"]
                 text = util.String(delta.Text)
+            elseif tev.EventType == TextEventType.REPLACE then
+                -- mimics `ExecuteTextEvent()`: https://github.com/zyedidia/micro/blob/f49487dc3adf82ec5e63bf1b6c0ffaed268aa747/internal/buffer/eventhandler.go#L116
+                text = util.String(buf:Substr(-delta.Start, -delta.End))
+                range["end"] = {
+                    line = delta.Start.Y,
+                    character = delta.Start.X + util.CharacterCountInString(delta.Text)
+                }
             end
 
             table.insert(changes, { range = range, text = text })
@@ -1176,64 +1239,6 @@ end
 
 function table.empty(x)
     return type(x) == "table" and next(x) == nil
-end
-
-
-function editBuf(buf, textedits)
-    -- sort edits by start position (earliest first)
-    local function sortByRangeStart(texteditA, texteditB)
-        local a = texteditA.range.start
-        local b = texteditB.range.start
-        return a.line < b.line or (a.line == b.line and a.character < b.character)
-    end
-    -- FIXME: table.sort is not guaranteed to be stable, and the LSP specification
-    -- says that if two edits share the same start position the order in the array
-    -- should dictate the order, so this is probably bugged in rare edge cases...
-    table.sort(textedits, sortByRangeStart)
-
-    local cursor = buf:GetActiveCursor()
-
-    -- maybe there is a nice way to keep multicursors and selections? for now let's
-    -- just get rid of them before editing the buffer to avoid weird behavior
-    buf:ClearCursors()
-    cursor:Deselect(true)
-
-    -- using byte offset seems to be the easiest & most reliable way to keep cursor
-    -- position even when lines get added/removed
-    local cursorLoc = buffer.Loc(cursor.Loc.X, cursor.Loc.Y)
-    local cursorByteOffset = buffer.ByteOffset(cursorLoc, buf)
-
-    local editedBufParts = {}
-
-    local prevEnd = buf:Start()
-
-    for _, textedit in pairs(textedits) do
-        local startLoc, endLoc = LSPRange.toLocs(textedit.range)
-        if endLoc:GreaterThan(buf:End()) then
-            endLoc = buf:End()
-        end
-
-        table.insert(editedBufParts, util.String(buf:Substr(prevEnd, startLoc)))
-        table.insert(editedBufParts, textedit.newText)
-        prevEnd = endLoc
-
-        -- if the cursor is in the middle of a textedit this can move it a bit but it's fiiiine
-        -- (I don't think there's a clean way to figure out the right place for it)
-        if startLoc:LessThan(cursorLoc) then
-            local oldTextLength = buffer.ByteOffset(endLoc, buf) - buffer.ByteOffset(startLoc, buf)
-            cursorByteOffset = cursorByteOffset - oldTextLength + textedit.newText:len()
-        end
-    end
-
-    table.insert(editedBufParts, util.String(buf:Substr(prevEnd, buf:End())))
-
-    buf:Remove(buf:Start(), buf:End())
-    buf:Insert(buf:End(), go_strings.Join(editedBufParts, ""))
-
-    local newCursorLoc = buffer.Loc(0, 0):Move(cursorByteOffset, buf)
-    buf:GetActiveCursor():GotoLoc(newCursorLoc)
-
-    syncFullDocument(buf)
 end
 
 function severityToString(severity)
@@ -1456,6 +1461,15 @@ function showReferenceLocations(newBufferTitle, lspLocations)
     micro.CurPane():HSplitBuf(newBuffer)
 end
 
+function findBufPaneByPath(fpath)
+    if fpath == nil then return nil end
+    for tabIdx, paneIdx, bp in bufpaneIterator() do
+        if fpath == bp.Buf.AbsPath then
+            return bp, tabIdx, paneIdx
+        end
+    end
+end
+
 function bufpaneIterator()
     local co = coroutine.create(function ()
         for tabIdx, tab in userdataIterator(micro.Tabs().List) do
@@ -1493,4 +1507,92 @@ function keyIterator(dict)
         key = next(dict, key)
         if key then return idx, key end
     end
+end
+
+---@param buf Buffer
+---@param edits TextEdit[]
+function applyTextEdits(buf, edits)
+    -- From https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textEditArray
+    -- "Text edits ranges must never overlap, that means no part of the original
+    -- document must be manipulated by more than one edit. However, it is possible
+    -- that multiple edits have the same start position: multiple inserts, or any
+    -- number of inserts followed by a single remove or replace edit. If multiple
+    -- inserts have the same position, the order in the array defines the order in
+    -- which the inserted strings appear in the resulting text."
+
+    ---To avoid invalidating locations we sort bottom to top and right to left
+    ---@param A TextEdit
+    ---@param B TextEdit
+    ---@return boolean -- perform swap?
+    local function sortEditsLastFirst(A, B)
+        local as, bs = A.range.start, B.range.start
+        return as.line > bs.line
+           or (as.line == bs.line and as.character >= bs.character)
+    end
+
+    table.sort(edits, sortEditsLastFirst)
+
+    for i, edit in ipairs(edits) do
+        local startLoc, endLoc = LSPRange.toLocs(edit.range)
+
+        if edit.newText == "" then
+            buf:Remove(startLoc, endLoc)
+        elseif startLoc.Y == endLoc.Y and startLoc.X == endLoc.X then
+            buf:Insert(startLoc, edit.newText)
+        else
+            local cursorsToFix = {}
+            for _, cursor in userdataIterator(buf:GetCursors()) do
+                local curLoc = -cursor.Loc
+                if startLoc:LessEqual(curLoc) and curLoc:LessEqual(endLoc) then
+                    cursorsToFix[cursor] = startLoc:Move(startLoc:Diff(curLoc, buf), buf)
+                end
+            end
+
+            buf:Replace(startLoc, endLoc, edit.newText)
+
+            for cursor, newLoc in pairs(cursorsToFix) do
+                cursor:GotoLoc(newLoc)
+            end
+        end
+    end
+end
+
+function applyWorkspaceEdit(workspaceEdit)
+    -- https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#workspaceEdit
+    -- workspaceEdit contains either:
+    -- * changes?: { [uri: DocumentUri]: TextEdit[]; };
+    -- OR
+    -- * documentChanges?: (TextDocumentEdit | CreateFile | RenameFile | DeleteFile)[]
+
+    local failures = 0
+
+    for documentUri, textedits in pairs(workspaceEdit.changes or {}) do
+        local absPath = absPathFromFileUri(documentUri)
+        local bufpane, _, _ = findBufPaneByPath(absPath)
+        if bufpane ~= nil then
+            applyTextEdits(bufpane.Buf, textedits)
+        else
+            failures = failures + 1
+            log("ERROR: Unable to apply workspace edit for document with uri", documentUri)
+        end
+    end
+
+    for _, textDocumentEdit in ipairs(workspaceEdit.documentChanges or {}) do
+        if textDocumentEdit.kind ~= nil then
+            -- FIXME: support CreateFile, RenameFile, DeleteFile
+            log("WARNING: Skipping unsupported textDocumentEdit:", textDocumentEdit.kind)
+            failures = failures + 1
+        else
+            local absPath = absPathFromFileUri(textDocumentEdit.textDocument.uri)
+            local bufpane, _, _ = findBufPaneByPath(absPath)
+            if bufpane ~= nil then
+                applyTextEdits(bufpane.Buf, textDocumentEdit.edits)
+            else
+                failures = failures + 1
+                log("ERROR: Unable to apply workspace edit for textdocument", textDocumentEdit.textDocument)
+            end
+        end
+    end
+
+    return failures == 0
 end
