@@ -40,6 +40,8 @@ The plugin currently provides following commands:
 - `lsp find-references` - find all references to the symbol under cursor (shows the results in a new pane)
 - `lsp document-symbols` - list all symbols in the current document
 - `lsp diagnostic-info` - show more information about a diagnostic on the current line (useful for multiline diagnostic messages)
+- `lsp rename new_name` - renames the symbol under cursor to `new_name`. Without
+  arguments the `lsp rename` command will prompt for a new name.
 
 You can type the commands on micro command prompt or bind them to keys by adding
 something like this to your `bindings.json`:
@@ -68,7 +70,7 @@ something like this to your `bindings.json`:
 - [x] go to type definition
 - [x] find references
 - [x] list document symbols
-- [ ] rename symbol
+- [x] rename symbol
 - [ ] code actions
 - [x] incremental document synchronization (better performance when editing large files)
 - [ ] [suggest a feature](https://github.com/Andriamanitra/mlsp/issues/new)
