@@ -479,32 +479,32 @@ local defaultOnResultHandlers = {
         local symbolLabels = {}
         ---@enum SymbolKindString
         local SYMBOLKINDS = {
-	        [1] = "File",
-	        [2] = "Module",
-	        [3] = "Namespace",
-	        [4] = "Package",
-	        [5] = "Class",
-	        [6] = "Method",
-	        [7] = "Property",
-	        [8] = "Field",
-	        [9] = "Constructor",
-	        [10] = "Enum",
-	        [11] = "Interface",
-	        [12] = "Function",
-	        [13] = "Variable",
-	        [14] = "Constant",
-	        [15] = "String",
-	        [16] = "Number",
-	        [17] = "Boolean",
-	        [18] = "Array",
-	        [19] = "Object",
-	        [20] = "Key",
-	        [21] = "Null",
-	        [22] = "EnumMember",
-	        [23] = "Struct",
-	        [24] = "Event",
-	        [25] = "Operator",
-	        [26] = "TypeParameter",
+            [1] = "File",
+            [2] = "Module",
+            [3] = "Namespace",
+            [4] = "Package",
+            [5] = "Class",
+            [6] = "Method",
+            [7] = "Property",
+            [8] = "Field",
+            [9] = "Constructor",
+            [10] = "Enum",
+            [11] = "Interface",
+            [12] = "Function",
+            [13] = "Variable",
+            [14] = "Constant",
+            [15] = "String",
+            [16] = "Number",
+            [17] = "Boolean",
+            [18] = "Array",
+            [19] = "Object",
+            [20] = "Key",
+            [21] = "Null",
+            [22] = "EnumMember",
+            [23] = "Struct",
+            [24] = "Event",
+            [25] = "Operator",
+            [26] = "TypeParameter",
         }
 
         for _, sym in ipairs(result) do
@@ -1363,7 +1363,7 @@ function string.split(str)
 end
 
 function string.startsWith(str, needle)
-	return string.sub(str, 1, #needle) == needle
+    return string.sub(str, 1, #needle) == needle
 end
 
 function string.uriDecode(str)
