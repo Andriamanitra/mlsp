@@ -12,6 +12,7 @@
 * [Python](#python)
 * [Ruby](#ruby)
 * [Rust](#rust)
+* [Scala](#scala)
 * [Zig](#zig)
 
 ## C/C++
@@ -123,6 +124,14 @@
 - [rust-analyzer](https://github.com/rust-lang/rust-analyzer)
   - Installation: `rustup component add rust-analyzer`
   - Command: `rust-analyzer`
+
+## Scala
+
+- [metals](https://github.com/scalameta/metals)
+  - Installation: (requires [coursier](https://get-coursier.io/docs/cli-installation)) command: `coursier install metals`
+  - formatting does not work
+  - `Import build` worskspace command is not supported
+  - Command: `metals`
 
 ## Zig
 

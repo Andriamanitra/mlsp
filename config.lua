@@ -131,6 +131,10 @@ languageServer = {
     zls = {
         cmd = "zls",
         filetypes = {"zig"}
+    },
+    metals = {
+        cmd = "metals",
+        filetypes = {"scala", "java"}
     }
 }
 
@@ -175,6 +179,7 @@ settings = {
         python     = languageServer.pylsp,
         ruby       = languageServer.rubylsp,
         rust       = languageServer.rustAnalyzer,
+        scala      = languageServer.metals,
         typescript = languageServer.deno,
         zig        = languageServer.zls,
     },
