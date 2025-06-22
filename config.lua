@@ -85,6 +85,10 @@ languageServer = {
         args = {"server"},
         filetypes = {"markdown"}
     },
+    ols = {
+        cmd = "ols",
+        filetypes = {"odin"},
+    },
     pylsp = {
         cmd = "pylsp",
         filetypes = {"python"}
@@ -172,6 +176,7 @@ settings = {
         json       = languageServer.deno,
         lua        = languageServer.luals,
         markdown   = languageServer.deno,
+        odin       = languageServer.ols,
         python     = languageServer.pylsp,
         ruby       = languageServer.rubylsp,
         rust       = languageServer.rustAnalyzer,
