@@ -7,6 +7,7 @@
 * [Haskell](#haskell)
 * [JavaScript/TypeScript](#javascripttypescript)
 * [JSON](#json)
+* [Odin](#odin)
 * [Lua](#lua)
 * [Markdown](#markdown)
 * [Python](#python)
@@ -93,6 +94,13 @@
   - Installation:
     [instructions](https://github.com/artempyanykh/marksman/blob/main/docs/install.md)
   - Command: `marksman server`
+
+## Odin
+
+- [ols](https://github.com/DanielGavin/ols)
+  - Installation:
+    [instructions](https://github.com/DanielGavin/ols?tab=readme-ov-file#installation)
+  - Command: `ols`
 
 ## Python
 
