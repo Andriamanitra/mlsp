@@ -618,7 +618,8 @@ function LSPClient:handleNotification(notification)
     elseif notification.method == "window/showMessage" then
         if notification.params.type == MessageType.Error then
             display_error(notification.params.message)
-        elseif notification.params.type == MessageType.Warning then
+        elseif notification.params.type == MessageType.Warning
+        or notification.params.type == MessageType.Info then
             display_info(notification.params.message)
         end
     elseif notification.method == "window/logMessage" then
@@ -632,7 +633,8 @@ function LSPClient:handleRequest(request)
     if request.method == "window/showMessageRequest" then
         if request.params.type == MessageType.Error then
             display_error(request.params.message)
-        elseif request.params.type == MessageType.Warning then
+        elseif request.params.type == MessageType.Warning
+        or request.params.type == MessageType.Info then
             display_info(request.params.message)
         end
         -- TODO: make it possible to respond with one of request.params.actions
