@@ -251,6 +251,7 @@ function LSPClient:initialize(server)
     client.openFiles = {}
     client.onInitialized = server.onInitialized
     client.filetypes = server.filetypes
+    client.dirtyBufs = {}
 
     -- the last parameter(s) to JobSpawn are userargs which get passed down to
     -- the callback functions (onStdout, onStderr, onExit)
@@ -1119,6 +1120,21 @@ end
 
 -- FIXME: figure out how to disable all this garbage when there are no active connections
 
+function onAnyEvent()
+    -- apply full document changes for clients that only support that
+    for _, client in pairs(activeConnections) do
+        if #client.dirtyBufs > 0 then
+            for buf, _ in pairs(client.dirtyBufs) do
+                local changes = {
+                    { text = util.String(buf:Bytes()) }
+                }
+                client:didChange(buf, changes)
+            end
+            client.dirtyBufs = {}
+        end
+    end
+end
+
 function onBeforeTextEvent(buf, tevent)
     if next(activeConnections) == nil then return end
     if buf.Type.Kind ~= buffer.BTDefault then return end
@@ -1134,9 +1150,7 @@ function onBeforeTextEvent(buf, tevent)
         )
     end
 
-    for _, client in pairs(activeConnections) do
-        client:didChange(buf, changes)
-    end
+    bufferChanged(buf, changes)
 end
 
 function syncFullDocument(buf)
@@ -1203,8 +1217,17 @@ function handleUndosRedos(buf, elem, numChanges)
         end
     end
 
+    bufferChanged(buf, changes)
+end
+
+function bufferChanged(buf, changes)
     for _, client in pairs(activeConnections) do
-        client:didChange(buf, changes)
+        local syncKind = client.serverCapabilities.textDocumentSync.change
+        if syncKind == 1 then -- only full document changes are supported
+            client.dirtyBufs[buf] = true
+        elseif syncKind == 2 then -- incremental changes are supported
+            client:didChange(buf, changes)
+        end
     end
 end
 
