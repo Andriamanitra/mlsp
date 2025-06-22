@@ -1123,15 +1123,13 @@ end
 function onAnyEvent()
     -- apply full document changes for clients that only support that
     for _, client in pairs(activeConnections) do
-        if #client.dirtyBufs > 0 then
-            for buf, _ in pairs(client.dirtyBufs) do
-                local changes = {
-                    { text = util.String(buf:Bytes()) }
-                }
-                client:didChange(buf, changes)
-            end
-            client.dirtyBufs = {}
+        for buf, _ in pairs(client.dirtyBufs) do
+            local changes = {
+                { text = util.String(buf:Bytes()) }
+            }
+            client:didChange(buf, changes)
         end
+        client.dirtyBufs = {}
     end
 end
 
