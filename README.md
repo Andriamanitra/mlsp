@@ -96,8 +96,8 @@ for more information on customizing the statusline.
 
 ## Known issues
 
-- Document synchronization for language servers that don't support incremental text document synchronization (eg. metals) don't work properly on micro versions older than 2.0.14
-- Unicode characters that require more than one UTF-16 code unit (such as emojis) are not handled properly (#34)
+- Document synchronization for language servers that don't support incremental text document synchronization (eg. metals) does not work properly on micro versions older than 2.0.14
+- Unicode characters that require more than one UTF-16 code unit (such as emojis) are not handled properly ([#34](https://github.com/Andriamanitra/mlsp/issues/34))
 
 ## Other similar projects
 
