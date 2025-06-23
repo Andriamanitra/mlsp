@@ -70,8 +70,10 @@ something like this to your `bindings.json`:
 - [x] go to type definition
 - [x] find references
 - [x] list document symbols
+- [ ] list workspace symbols
 - [x] rename symbol
 - [ ] code actions
+- [ ] workspace commands
 - [x] incremental document synchronization (better performance when editing large files)
 - [ ] [suggest a feature](https://github.com/Andriamanitra/mlsp/issues/new)
 
@@ -94,7 +96,8 @@ for more information on customizing the statusline.
 
 ## Known issues
 
-- The very first autocompletion with `rust-analyzer` after initialization is very slow (it can take multiple seconds).
+- Document synchronization for language servers that don't support incremental text document synchronization (eg. metals) don't work properly on micro versions older than 2.0.14
+- Unicode characters that require more than one UTF-16 code unit (such as emojis) are not handled properly (#34)
 
 ## Other similar projects
 
