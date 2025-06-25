@@ -843,9 +843,9 @@ function LSPClient:receiveMessage(text)
     elseif decodedMsg.method then
         self:handleNotification(decodedMsg)
     elseif self.sentRequests[decodedMsg.id] ~= nil then
-        local request = self.sentRequests[decodedMsg.id]
+        handler = self.sentRequests[decodedMsg.id]
         self.sentRequests[decodedMsg.id] = nil
-        display_info(string.format("No result for %s", request))
+        display_info(("No result for %s"):format(handler.method))
     else
         log("WARNING: unrecognized message type")
     end
