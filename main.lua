@@ -287,7 +287,29 @@ function LSPClient:initialize(server)
         params.initializationOptions = server.initializationOptions
     end
 
-    client:request(Request("initialize", params))
+    client:request(Request("initialize", params), {
+        method = "initialize",
+        onResult = function(result)
+            client.serverCapabilities = result.capabilities
+            if result.serverInfo then
+                client.serverName = result.serverInfo.name
+                client.serverVersion = result.serverInfo.version
+                display_info(("Initialized %s version %s"):format(client.serverName, client.serverVersion))
+            else
+                display_info(("Initialized '%s' (no version information)"):format(client.clientId))
+            end
+            client:notification("initialized")
+            activeConnections[client.clientId] = client
+            allConnections[client.clientId] = nil
+            if type(client.onInitialized) == "function" then
+                client:onInitialized()
+            end
+            for _, _, bp in bufpaneIterator() do
+                onBufferOpen(bp.Buf)
+            end
+        end
+    })
+
     return client
 end
 
@@ -327,8 +349,6 @@ end
 
 ---@type onResultHandler { [method]: function }
 local defaultOnResultHandlers = {
-    ["initialize"] = function() error("Never run this!") end,
-
     ---@param result? Hover
     ["textDocument/hover"] = function(result)
         local showHoverInfo = function(data)
@@ -808,36 +828,10 @@ function LSPClient:receiveMessage(text)
 
     if decodedMsg.result ~= nil then
         assert(handler, "MUST NOT BE NIL HERE")
-
-        --NOTE: intercept `initialize` because it requires access to the `client`
-        if handler.method == "initialize" then
-            local result = decodedMsg.result
-            self.serverCapabilities = result.capabilities
-            if result.serverInfo then
-                self.serverName = result.serverInfo.name
-                self.serverVersion = result.serverInfo.version
-                display_info(("Initialized %s version %s"):format(self.serverName, self.serverVersion))
-            else
-                display_info(("Initialized '%s' (no version information)"):format(self.clientId))
-            end
-            self:notification("initialized")
-            activeConnections[self.clientId] = self
-            allConnections[self.clientId] = nil
-            if type(self.onInitialized) == "function" then
-                self:onInitialized()
-            end
-            for _, _, bp in bufpaneIterator() do
-                onBufferOpen(bp.Buf)
-            end
-
-        else
-            handler.onResult(decodedMsg.result)
-        end
-
+        handler.onResult(decodedMsg.result)
     elseif decodedMsg.error then
         assert(handler, "MUST NOT BE NIL HERE")
         handler.onError(handler.method, decodedMsg.error)
-
     elseif decodedMsg.id and decodedMsg.method then
         self:handleRequest(decodedMsg)
     elseif decodedMsg.method then
