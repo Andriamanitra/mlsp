@@ -362,6 +362,7 @@ end
 
 ---@param method string
 ---@param params? table
+---@return LSPRequest
 function Request(method, params)
     return {
         id = -1, -- NOTE: invalid number to keep table positions; will be set in LSPClient:request()
@@ -377,7 +378,7 @@ end
 ---@param method string
 ---@param bp BufPane
 ---@param arguments userdata|any?
----@return LSPRequest?
+---@return LSPRequest
 function DefaultRequest(method, bufpane, arguments)
     -- most servers completely ignore these values but tabSize and
     -- insertSpaces are required according to the specification
