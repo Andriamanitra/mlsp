@@ -307,7 +307,8 @@ function LSPClient:initialize(server)
             for _, _, bp in bufpaneIterator() do
                 onBufferOpen(bp.Buf)
             end
-        end
+        end,
+        onError = defaultOnErrorHandler
     })
 
     return client
@@ -495,16 +496,10 @@ function LSPClient:request(request, handler)
     request.jsonrpc = "2.0"
     request.id = self.requestId
 
-    -- fill any non set handler with the default one
-    handler = handler or {
-        onResult = defaultOnResultHandlers[request.method],
-        onError = defaultOnErrorHandler,
-        method = request.method
-    }
-    handler.onResult = handler.onResult or defaultOnResultHandlers[request.method]
-    handler.onError  = handler.onError  or defaultOnErrorHandler
-    handler.method   = handler.method   or request.method
+    assert(type(handler)          == "table",    "'handler' MUST be a table")
+    assert(type(handler.method)   == "string",   "'handler.method' MUST be a string")
     assert(type(handler.onResult) == "function", "'handler.onResult' MUST be a function")
+    assert(type(handler.onError)  == "function", "'handler.onError' MUST be a function")
 
     self.sentRequests[self.requestId] = handler
     self.requestId = self.requestId + 1
