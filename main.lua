@@ -378,112 +378,91 @@ end
 ---@param bp BufPane
 ---@param arguments userdata|any?
 ---@return LSPRequest?
-function DefaultRequest(method, bp, arguments)
+function DefaultRequest(method, bufpane, arguments)
     -- most servers completely ignore these values but tabSize and
     -- insertSpaces are required according to the specification
     -- https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#formattingOptions
     local formatOptions = {
-        tabSize = bp.Buf.Settings["tabsize"],
-        insertSpaces = bp.Buf.Settings["tabstospaces"],
+        tabSize = bufpane.Buf.Settings["tabsize"],
+        insertSpaces = bufpane.Buf.Settings["tabstospaces"],
         trimTrailingWhitespace = true,
         insertFinalNewline = true,
         trimFinalNewlines = true
     }
 
-    local defaultRequests = {
-        -- NOTE: ["initialize"] = function (_, _) error("Leave it where it is") end,
+    local params = nil
+    if method == "textDocument/hover" then
+        local buf = bufpane.Buf
+        local cursor = buf:GetActiveCursor()
+        params = {
+            textDocument = textDocumentIdentifier(buf),
+            position = { line = cursor.Y, character = cursor.X }
+        }
 
-        ["textDocument/hover"] = function(bufpane, _)
-            local buf = bufpane.Buf
-            local cursor = buf:GetActiveCursor()
-            return Request("textDocument/hover", {
-                textDocument = textDocumentIdentifier(buf),
-                position = { line = cursor.Y, character = cursor.X }
-            })
-        end,
+    elseif method == "textDocument/formatting" then
+        params = {
+            textDocument = textDocumentIdentifier(bufpane.Buf),
+            options = formatOptions
+        }
 
-        ["textDocument/formatting"] = function(bufpane, _)
-            local buf = bufpane.Buf
-            return Request("textDocument/formatting", {
-                textDocument = textDocumentIdentifier(buf),
-                options = formatOptions
-            })
-        end,
+    elseif method == "textDocument/rangeFormatting" then
+        local ranges = arguments
+        params = {
+            textDocument = textDocumentIdentifier(bufpane.Buf),
+            range = ranges[1],
+            options = formatOptions
+        }
 
-        ["textDocument/rangeFormatting"] = function(bufpane, ranges)
-            local buf = bufpane.Buf
-            return Request("textDocument/rangeFormatting", {
-                textDocument = textDocumentIdentifier(buf),
-                range = ranges[1],
-                options = formatOptions
-            })
-        end,
+    elseif method == "textDocument/completion" then
+        local buf = bufpane.Buf
+        local cursor = buf:GetActiveCursor()
+        params = {
+            textDocument = textDocumentIdentifier(buf),
+            position = { line = cursor.Y, character = cursor.X },
+            context = {
+                -- 1 = Invoked, 2 = TriggerCharacter, 3 = TriggerForIncompleteCompletions
+                triggerKind = 1,
+            }
+        }
 
-        ["textDocument/completion"] = function(bufpane, _)
-            local buf = bufpane.Buf
-            local cursor = buf:GetActiveCursor()
-            return Request("textDocument/completion", {
-                textDocument = textDocumentIdentifier(buf),
-                position = { line = cursor.Y, character = cursor.X },
-                context = {
-                    -- 1 = Invoked, 2 = TriggerCharacter, 3 = TriggerForIncompleteCompletions
-                    triggerKind = 1,
-                }
-            })
-        end,
+    elseif method == "textDocument/definition"
+        or method == "textDocument/declaration"
+        or method == "textDocument/implementation"
+        or method == "textDocument/typeDefinition"
+    then
+        local buf = bufpane.Buf
+        local cursor = buf:GetActiveCursor()
+        params = {
+            textDocument = textDocumentIdentifier(buf),
+            position = { line = cursor.Y, character = cursor.X }
+        }
 
-        --NOTE: Avoids to copy paste the body to the others gotoAction
-        ["textDocument/definition"] = function(bufpane, args)
-            local method_ = args or "textDocument/definition"
-            local buf = bufpane.Buf
-            local cursor = buf:GetActiveCursor()
-            return Request(method_, {
-                textDocument = textDocumentIdentifier(buf),
-                position = { line = cursor.Y, character = cursor.X }
-            })
-        end,
+    elseif method == "textDocument/references" then
+        local buf = bufpane.Buf
+        local cursor = buf:GetActiveCursor()
+        params = {
+            textDocument = textDocumentIdentifier(buf),
+            position = { line = cursor.Y, character = cursor.X },
+            context = { includeDeclaration = true }
+        }
 
-        ["textDocument/declaration"] = function(bufpane, _)
-            return DefaultRequest("textDocument/definition", bufpane, "textDocument/declaration")
-        end,
+    elseif method == "textDocument/documentSymbol" then
+        params = { textDocument = textDocumentIdentifier(bufpane.Buf) }
 
-        ["textDocument/implementation"] = function(bufpane, _)
-            return DefaultRequest("textDocument/definition", bufpane, "textDocument/implementation")
-        end,
+    elseif method == "textDocument/rename" then
+        local newName = arguments
+        local buf = bufpane.Buf
+        local cursor = buf:GetActiveCursor()
+        params = {
+            textDocument = textDocumentIdentifier(buf),
+            position = { line = cursor.Y, character = cursor.X },
+            newName = newName,
+        }
+    end
 
-        ["textDocument/typeDefinition"] = function(bufpane, _)
-            return DefaultRequest("textDocument/definition", bufpane, "textDocument/typeDefinition")
-        end,
-
-        ["textDocument/references"] = function(bufpane, _)
-            local buf = bufpane.Buf
-            local cursor = buf:GetActiveCursor()
-            return Request("textDocument/references", {
-                textDocument = textDocumentIdentifier(buf),
-                position = { line = cursor.Y, character = cursor.X },
-                context = { includeDeclaration = true }
-            })
-        end,
-
-        ["textDocument/documentSymbol"] = function(bufpane, _)
-            return Request("textDocument/documentSymbol",{
-                textDocument = textDocumentIdentifier(bufpane.Buf)
-            })
-        end,
-
-        ["textDocument/rename"] = function(bufpane, newName)
-            assert(newName)
-            local buf = bufpane.Buf
-            local cursor = buf:GetActiveCursor()
-            return Request("textDocument/rename", {
-                textDocument = textDocumentIdentifier(buf),
-                position = { line = cursor.Y, character = cursor.X },
-                newName = newName,
-            })
-        end
-    }
-
-    return defaultRequests[method](bp or micro.CurPane(), arguments)
+    -- NOTE: let unsupported methods fallthrough with params = nil,
+    -- so a json.object will be used inside Request as params.
+    return Request(method, params)
 end
 
 ---@class LSPMsgHandler
