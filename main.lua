@@ -364,6 +364,8 @@ end
 ---@param params? table
 function Request(method, params)
     return {
+        id = -1, -- NOTE: invalid number to keep table positions; will be set in LSPClient:request()
+        jsonrpc = "2.0",
         method = method,
         -- the spec allows params to be omitted but language server implementations
         -- are buggy so we can put an empty object there for now
@@ -493,8 +495,7 @@ end
 ---@param handler? LSPMsgHandler
 function LSPClient:request(request, handler)
     assert(request, "MUST not be nil")
-    request.jsonrpc = "2.0"
-    request.id = self.requestId
+    request.id = self.requestId -- set the correct Id
 
     assert(type(handler)          == "table",    "'handler' MUST be a table")
     assert(type(handler.method)   == "string",   "'handler.method' MUST be a string")
