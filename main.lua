@@ -584,10 +584,6 @@ function LSPClient:receiveMessage(text)
     if decodedMsg.id and (decodedMsg.result ~= nil or decodedMsg.error) then
         handler = self.sentRequests[decodedMsg.id]
         self.sentRequests[decodedMsg.id] = nil
-        assert(type(handler) == "table", "handler must be always a table")
-        assert(type(handler.onResult) == "function", "handler.onResult must be always a function")
-        assert(type(handler.onError) == "function", "handler.onError must be always a function")
-        assert(type(handler.method) == "string", "handler.method must be always a string")
     end
 
     if decodedMsg.result ~= nil then
