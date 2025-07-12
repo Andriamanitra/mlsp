@@ -375,97 +375,6 @@ function Request(method, params)
     }
 end
 
----@param method string
----@param bp BufPane
----@param arguments userdata|any?
----@return LSPRequest
-function DefaultRequest(method, bufpane, arguments)
-    -- most servers completely ignore these values but tabSize and
-    -- insertSpaces are required according to the specification
-    -- https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#formattingOptions
-    local formatOptions = {
-        tabSize = bufpane.Buf.Settings["tabsize"],
-        insertSpaces = bufpane.Buf.Settings["tabstospaces"],
-        trimTrailingWhitespace = true,
-        insertFinalNewline = true,
-        trimFinalNewlines = true
-    }
-
-    local params = nil
-    if method == "textDocument/hover" then
-        local buf = bufpane.Buf
-        local cursor = buf:GetActiveCursor()
-        params = {
-            textDocument = textDocumentIdentifier(buf),
-            position = { line = cursor.Y, character = cursor.X }
-        }
-
-    elseif method == "textDocument/formatting" then
-        params = {
-            textDocument = textDocumentIdentifier(bufpane.Buf),
-            options = formatOptions
-        }
-
-    elseif method == "textDocument/rangeFormatting" then
-        local ranges = arguments
-        params = {
-            textDocument = textDocumentIdentifier(bufpane.Buf),
-            range = ranges[1],
-            options = formatOptions
-        }
-
-    elseif method == "textDocument/completion" then
-        local buf = bufpane.Buf
-        local cursor = buf:GetActiveCursor()
-        params = {
-            textDocument = textDocumentIdentifier(buf),
-            position = { line = cursor.Y, character = cursor.X },
-            context = {
-                -- 1 = Invoked, 2 = TriggerCharacter, 3 = TriggerForIncompleteCompletions
-                triggerKind = 1,
-            }
-        }
-
-    elseif method == "textDocument/definition"
-        or method == "textDocument/declaration"
-        or method == "textDocument/implementation"
-        or method == "textDocument/typeDefinition"
-    then
-        local buf = bufpane.Buf
-        local cursor = buf:GetActiveCursor()
-        params = {
-            textDocument = textDocumentIdentifier(buf),
-            position = { line = cursor.Y, character = cursor.X }
-        }
-
-    elseif method == "textDocument/references" then
-        local buf = bufpane.Buf
-        local cursor = buf:GetActiveCursor()
-        params = {
-            textDocument = textDocumentIdentifier(buf),
-            position = { line = cursor.Y, character = cursor.X },
-            context = { includeDeclaration = true }
-        }
-
-    elseif method == "textDocument/documentSymbol" then
-        params = { textDocument = textDocumentIdentifier(bufpane.Buf) }
-
-    elseif method == "textDocument/rename" then
-        local newName = arguments
-        local buf = bufpane.Buf
-        local cursor = buf:GetActiveCursor()
-        params = {
-            textDocument = textDocumentIdentifier(buf),
-            position = { line = cursor.Y, character = cursor.X },
-            newName = newName,
-        }
-    end
-
-    -- NOTE: let unsupported methods fallthrough with params = nil,
-    -- so a json.object will be used inside Request as params.
-    return Request(method, params)
-end
-
 ---@class LSPMsgHandler
 ---@field method string Method that is handled
 ---@field onResult function Callback to handle results on the LSP Server response
@@ -725,7 +634,14 @@ function hoverAction(bufpane)
     if not client then return end
 
     local method_str = "textDocument/hover"
-    client:request(DefaultRequest(method_str, bufpane), {
+    local buf = bufpane.Buf
+    local cursor = buf:GetActiveCursor()
+    local req = Request(method_str, {
+        textDocument = textDocumentIdentifier(buf),
+        position = { line = cursor.Y, character = cursor.X }
+    })
+
+    client:request(req, {
         method = method_str,
         ---@param result? Hover
         onResult = function(result)
@@ -755,6 +671,17 @@ function hoverAction(bufpane)
 end
 
 function formatAction(bufpane)
+    -- most servers completely ignore these values but tabSize and
+    -- insertSpaces are required according to the specification
+    -- https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#formattingOptions
+    local formatOptions = {
+        tabSize = bufpane.Buf.Settings["tabsize"],
+        insertSpaces = bufpane.Buf.Settings["tabstospaces"],
+        trimTrailingWhitespace = true,
+        insertFinalNewline = true,
+        trimFinalNewlines = true
+    }
+
     local selectedRanges = {}
     local buf = bufpane.Buf
     for i = 1, #buf:GetCursors() do
@@ -774,7 +701,10 @@ function formatAction(bufpane)
     local client, req, onResult
     if #selectedRanges == 0 then
         client = findClient(filetype, "documentFormattingProvider", "formatting")
-        req = DefaultRequest("textDocument/formatting", bufpane)
+        req = Request("textDocument/formatting", {
+            textDocument = textDocumentIdentifier(buf),
+            options = formatOptions
+        })
         ---@param result? TextEdit[]
         onResult = function(result)
             if result == nil or next(result) == nil then
@@ -788,7 +718,11 @@ function formatAction(bufpane)
 
     else
         client = findClient(filetype, "documentRangeFormattingProvider", "formatting selections")
-        req = DefaultRequest("textDocument/rangeFormatting", bufpane, selectedRanges)
+        req = Request("textDocument/rangeFormatting", {
+            textDocument = textDocumentIdentifier(buf),
+            range = selectedRanges[1],
+            options = formatOptions
+        })
         ---@param result? TextEdit[]
         onResult = function(result)
             if result == nil or next(result) == nil then
@@ -843,7 +777,11 @@ function renameAction(bufpane, args)
     }
 
     if #args > 0 then -- `lsp rename newName`
-        client:request(DefaultRequest(method_str, bufpane, args[1]), handler)
+        client:request(Request(method_str, {
+            textDocument = textDocumentIdentifier(buf),
+            position = { line = cursor.Y, character = cursor.X },
+            newName = args[1],
+        }), handler)
     else -- `lsp rename`
         micro.InfoBar():Prompt(
             string.format("[µlsp] rename symbol at line %d column %d to: ", cursor.Y + 1, cursor.X + 1),
@@ -852,7 +790,11 @@ function renameAction(bufpane, args)
             nil, -- event callback
             function(newName, canceled) -- done callback
                 if not canceled then
-                    client:request(DefaultRequest(method_str, bufpane, newName), handler)
+                    client:request(Request(method_str, {
+                        textDocument = textDocumentIdentifier(buf),
+                        position = { line = cursor.Y, character = cursor.X },
+                        newName = newName,
+                    }), handler)
                 end
             end
         )
@@ -864,7 +806,18 @@ function completionAction(bufpane)
     if not client then return end
 
     local method_str = "textDocument/completion"
-    client:request(DefaultRequest(method_str, bufpane), {
+    local buf = bufpane.Buf
+    local cursor = buf:GetActiveCursor()
+    local req = Request(method_str, {
+        textDocument = textDocumentIdentifier(buf),
+        position = { line = cursor.Y, character = cursor.X },
+        context = {
+            -- 1 = Invoked, 2 = TriggerCharacter, 3 = TriggerForIncompleteCompletions
+            triggerKind = 1,
+        }
+    })
+
+    client:request(req, {
         method = method_str,
         ---@param result? CompletionItem[] | CompletionList If a CompletionItem[] is provided it is interpreted to be complete. So it is the same as { isIncomplete: false, items }
         onResult = function(result)
@@ -884,7 +837,6 @@ function completionAction(bufpane)
 
             table.sort(completionitems, bySortText)
 
-            local buf = bufpane.Buf
             local wordbytes, _ = buf:GetWord()
             local stem = util.String(wordbytes)
 
@@ -937,9 +889,17 @@ function gotoAction(kind)
     local requestMethod = string.format("textDocument/%s", kind)
 
     return function(bufpane)
-        local client = findClient(bufpane.Buf:FileType(), cap, requestMethod)
+        local buf = bufpane.Buf
+        local client = findClient(buf:FileType(), cap, requestMethod)
         if not client then return end
-        client:request(DefaultRequest(requestMethod, bufpane), {
+
+        local cursor = buf:GetActiveCursor()
+        local req = Request(requestMethod, {
+            textDocument = textDocumentIdentifier(buf),
+            position = { line = cursor.Y, character = cursor.X }
+        })
+
+        client:request(req, {
             method = requestMethod,
             ---@param result? Location | Location[] | LocationLink[]
             onResult = function(result)
@@ -955,7 +915,15 @@ function findReferencesAction(bufpane)
     if not client then return end
 
     local method_str = "textDocument/references"
-    client:request(DefaultRequest(method_str, bufpane), {
+    local buf = bufpane.Buf
+    local cursor = buf:GetActiveCursor()
+    local req = Request(method_str, {
+        textDocument = textDocumentIdentifier(buf),
+        position = { line = cursor.Y, character = cursor.X },
+        context = { includeDeclaration = true }
+    })
+
+    client:request(req, {
         method = method_str,
         ---@param result? Location[]
         onResult = function(result)
@@ -974,7 +942,11 @@ function documentSymbolsAction(bufpane)
     if not client then return end
 
     local method_str = "textDocument/documentSymbol"
-    client:request(DefaultRequest(method_str, bufpane), {
+    local req = Request(method_str, {
+        textDocument = textDocumentIdentifier(bufpane.Buf)
+    })
+
+    client:request(req, {
         method = method_str,
         ---@param result? DocumentSymbol[]
         onResult = function(result)
@@ -1718,7 +1690,7 @@ function applyWorkspaceEdit(workspaceEdit)
 end
 
 ---@param method string
----@param result Location | Location[] | LocationLink[] | null
+---@param result? Location | Location[] | LocationLink[]
 function gotoLSPLocation(method, result)
     if result == nil or table.empty(result) then
         display_info(string.format("%s not found", method:match("textDocument/(.*)$")))
