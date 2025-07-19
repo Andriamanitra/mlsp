@@ -375,21 +375,21 @@ function Request(method, params)
     }
 end
 
----@class LSPMsgHandler
+---@class LSPResponseHandler
 ---@field method string Method that is handled
 ---@field onResult function Callback to handle results on the LSP Server response
 ---@field onError function Callback to handle errors on the LSP Server response
 
 ---@param request LSPRequest
----@param handler? LSPMsgHandler
+---@param handler? LSPResponseHandler
 function LSPClient:request(request, handler)
     assert(request, "MUST not be nil")
     request.id = self.requestId -- set the correct Id
 
     assert(type(handler)          == "table",    "'handler' MUST be a table")
-    assert(type(handler.method)   == "string",   "'handler.method' MUST be a string")
     assert(type(handler.onResult) == "function", "'handler.onResult' MUST be a function")
     assert(type(handler.onError)  == "function", "'handler.onError' MUST be a function")
+    handler.method = request.method
 
     self.sentRequests[self.requestId] = handler
     self.requestId = self.requestId + 1
@@ -427,10 +427,6 @@ end
 
 function LSPClient:hasCapability(capability)
     return self.serverCapabilities[capability] ~= nil
-end
-
-function LSPClient:handleResponseError(method, error)
-    display_error(string.format("%s (Error %d, %s)", error.message, error.code, method))
 end
 
 function LSPClient:handleNotification(notification)
@@ -488,7 +484,7 @@ end
 function LSPClient:receiveMessage(text)
     local decodedMsg = json.decode(text)
 
-    ---@type LSPMsgHandler
+    ---@type LSPResponseHandler
     local handler
     if decodedMsg.id and (decodedMsg.result ~= nil or decodedMsg.error) then
         handler = self.sentRequests[decodedMsg.id]
@@ -633,16 +629,14 @@ function hoverAction(bufpane)
     local client = findClient(bufpane.Buf:FileType(), "hoverProvider", "hover information")
     if not client then return end
 
-    local method_str = "textDocument/hover"
     local buf = bufpane.Buf
     local cursor = buf:GetActiveCursor()
-    local req = Request(method_str, {
+    local req = Request("textDocument/hover", {
         textDocument = textDocumentIdentifier(buf),
         position = { line = cursor.Y, character = cursor.X }
     })
 
     client:request(req, {
-        method = method_str,
         ---@param result? Hover
         onResult = function(result)
             local showHoverInfo = function(data)
@@ -657,9 +651,9 @@ function hoverAction(bufpane)
             -- * lua-lsp still responds with {"contents": []} for no results
             if result == nil or result.contents == "" or table.empty(result.contents) then
                 display_info("No hover results")
-            elseif type(result.contents) == "string" then --MarkedString
+            elseif type(result.contents) == "string" then -- MarkedString
                 showHoverInfo(result.contents)
-            elseif type(result.contents.value) == "string" then --MarkedContent
+            elseif type(result.contents.value) == "string" then -- MarkedString | MarkupContent
                 showHoverInfo(result.contents.value)
             else
                 display_info("WARNING: Ignored textDocument/hover result due to unrecognized format")
@@ -695,12 +689,13 @@ function formatAction(bufpane)
         display_error("Formatting multiple selections is not supported yet")
         return
     end
-    buf:DeselectCursors() -- do not preserve the selections
 
     local filetype = bufpane.Buf:FileType()
     local client, req, onResult
     if #selectedRanges == 0 then
         client = findClient(filetype, "documentFormattingProvider", "formatting")
+        if not client then return end
+
         req = Request("textDocument/formatting", {
             textDocument = textDocumentIdentifier(buf),
             options = formatOptions
@@ -718,6 +713,8 @@ function formatAction(bufpane)
 
     else
         client = findClient(filetype, "documentRangeFormattingProvider", "formatting selections")
+        if not client then return end
+
         req = Request("textDocument/rangeFormatting", {
             textDocument = textDocumentIdentifier(buf),
             range = selectedRanges[1],
@@ -735,32 +732,28 @@ function formatAction(bufpane)
         end
     end
 
-    if client ~= nil then
-        client:request(req, {
-            method = req.method,
-            onResult = onResult,
-            onError = defaultOnErrorHandler
-        })
-    end
+    client:request(req, {
+        method = req.method,
+        onResult = onResult,
+        onError = defaultOnErrorHandler
+    })
 end
 
 function renameAction(bufpane, args)
+    local client = findClient(bufpane.Buf:FileType(), "renameProvider", "rename")
+    if not client then return end
+
     local buf = bufpane.Buf
     if #buf:GetCursors() > 1 then
         display_error("'rename' is not available for multiple cursors")
         return
     end
 
-    local client = findClient(bufpane.Buf:FileType(), "renameProvider", "rename")
-    if not client then return end
-
     local cursor = buf:GetActiveCursor()
     cursor:Deselect(true) -- selection isn't preserved; place the cursor at the start
 
-    local method_str = "textDocument/rename"
-    ---@param result? WorkspaceEdit
     local handler = {
-        method = method_str,
+        ---@param result? WorkspaceEdit
         onResult = function(result)
             if result == nil or table.empty(result) then
                 display_info("Renamed symbol (no changes required)")
@@ -777,7 +770,7 @@ function renameAction(bufpane, args)
     }
 
     if #args > 0 then -- `lsp rename newName`
-        client:request(Request(method_str, {
+        client:request(Request("textDocument/rename", {
             textDocument = textDocumentIdentifier(buf),
             position = { line = cursor.Y, character = cursor.X },
             newName = args[1],
@@ -790,7 +783,7 @@ function renameAction(bufpane, args)
             nil, -- event callback
             function(newName, canceled) -- done callback
                 if not canceled then
-                    client:request(Request(method_str, {
+                    client:request(Request("textDocument/rename", {
                         textDocument = textDocumentIdentifier(buf),
                         position = { line = cursor.Y, character = cursor.X },
                         newName = newName,
@@ -805,10 +798,9 @@ function completionAction(bufpane)
     local client = findClient(bufpane.Buf:FileType(), "completionProvider", "completion")
     if not client then return end
 
-    local method_str = "textDocument/completion"
     local buf = bufpane.Buf
     local cursor = buf:GetActiveCursor()
-    local req = Request(method_str, {
+    local req = Request("textDocument/completion", {
         textDocument = textDocumentIdentifier(buf),
         position = { line = cursor.Y, character = cursor.X },
         context = {
@@ -818,7 +810,6 @@ function completionAction(bufpane)
     })
 
     client:request(req, {
-        method = method_str,
         ---@param result? CompletionItem[] | CompletionList If a CompletionItem[] is provided it is interpreted to be complete. So it is the same as { isIncomplete: false, items }
         onResult = function(result)
             -- TODO: handle result.isIncomplete = true somehow
@@ -903,7 +894,11 @@ function gotoAction(kind)
             method = requestMethod,
             ---@param result? Location | Location[] | LocationLink[]
             onResult = function(result)
-                gotoLSPLocation(requestMethod, result)
+                if result == nil or table.empty(result) then
+                    display_info(("%s not found"):format(kind))
+                else
+                    gotoLSPLocation(result)
+                end
             end,
             onError = defaultOnErrorHandler
         })
@@ -914,17 +909,15 @@ function findReferencesAction(bufpane)
     local client = findClient(bufpane.Buf:FileType(), "referencesProvider", "finding references")
     if not client then return end
 
-    local method_str = "textDocument/references"
     local buf = bufpane.Buf
     local cursor = buf:GetActiveCursor()
-    local req = Request(method_str, {
+    local req = Request("textDocument/references", {
         textDocument = textDocumentIdentifier(buf),
         position = { line = cursor.Y, character = cursor.X },
         context = { includeDeclaration = true }
     })
 
     client:request(req, {
-        method = method_str,
         ---@param result? Location[]
         onResult = function(result)
             if result == nil or table.empty(result) then
@@ -941,13 +934,11 @@ function documentSymbolsAction(bufpane)
     local client = findClient(bufpane.Buf:FileType(), "documentSymbolProvider", "document symbols")
     if not client then return end
 
-    local method_str = "textDocument/documentSymbol"
-    local req = Request(method_str, {
+    local req = Request("textDocument/documentSymbol", {
         textDocument = textDocumentIdentifier(bufpane.Buf)
     })
 
     client:request(req, {
-        method = method_str,
         ---@param result? DocumentSymbol[]
         onResult = function(result)
             if result == nil or table.empty(result) then
@@ -1689,25 +1680,20 @@ function applyWorkspaceEdit(workspaceEdit)
     return failures == 0
 end
 
----@param method string
----@param result? Location | Location[] | LocationLink[]
-function gotoLSPLocation(method, result)
-    if result == nil or table.empty(result) then
-        display_info(string.format("%s not found", method:match("textDocument/(.*)$")))
-    else
-        -- FIXME: handle list of results properly
-        -- if result is a list just take the first one
-        if result[1] then result = result[1] end
+---@param result Location | Location[] | LocationLink[]
+function gotoLSPLocation(result)
+    -- FIXME: handle list of results properly
+    -- if result is a list just take the first one
+    if result[1] then result = result[1] end
 
-        -- FIXME: support LocationLink[]
-        if result.targetRange ~= nil then
-            display_info("LocationLinks are not supported yet")
-            return
-        end
-
-        -- now result should be Location
-        local filePath = absPathFromFileUri(result.uri)
-        local startLoc, _ = LSPRange.toLocs(result.range)
-        openFileAtLoc(filePath, startLoc)
+    -- FIXME: support LocationLink[]
+    if result.targetRange ~= nil then
+        display_info("LocationLinks are not supported yet")
+        return
     end
+
+    -- now result should be Location
+    local filePath = absPathFromFileUri(result.uri)
+    local startLoc, _ = LSPRange.toLocs(result.range)
+    openFileAtLoc(filePath, startLoc)
 end
