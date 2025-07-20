@@ -288,7 +288,6 @@ function LSPClient:initialize(server)
     end
 
     client:request(Request("initialize", params), {
-        method = "initialize",
         onResult = function(result)
             client.serverCapabilities = result.capabilities
             if result.serverInfo then
@@ -733,7 +732,6 @@ function formatAction(bufpane)
     end
 
     client:request(req, {
-        method = req.method,
         onResult = onResult,
         onError = defaultOnErrorHandler
     })
@@ -891,7 +889,6 @@ function gotoAction(kind)
         })
 
         client:request(req, {
-            method = requestMethod,
             ---@param result? Location | Location[] | LocationLink[]
             onResult = function(result)
                 if result == nil or table.empty(result) then
