@@ -351,13 +351,11 @@ function defaultOnErrorHandler(method, error)
     display_error(("%s (Error %d, %s)"):format(error.message, error.code, method))
 end
 
----@alias jsonObject {}
-
 ---@class LSPRequest
 ---@field id number
 ---@field jsonrpc string
 ---@field method string
----@field params table|jsonObject
+---@field params table
 
 ---@param method string
 ---@param params? table
