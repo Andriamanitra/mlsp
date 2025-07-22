@@ -287,7 +287,8 @@ function LSPClient:initialize(server)
         params.initializationOptions = server.initializationOptions
     end
 
-    client:request(Request("initialize", params), {
+    local method = "initialize"
+    client:request(Request(method, params), {
         onResult = function(result)
             client.serverCapabilities = result.capabilities
             if result.serverInfo then
@@ -307,7 +308,7 @@ function LSPClient:initialize(server)
                 onBufferOpen(bp.Buf)
             end
         end,
-        onError = defaultOnErrorHandler
+        onError = defaultOnErrorHandler(method)
     })
 
     return client
@@ -347,8 +348,10 @@ function LSPClient:notification(method, params)
     self:send(msg)
 end
 
-function defaultOnErrorHandler(method, error)
-    display_error(("%s (Error %d, %s)"):format(error.message, error.code, method))
+function defaultOnErrorHandler(method)
+    return function(error)
+        display_error(("%s (Error %d, %s)"):format(error.message, error.code, method))
+    end
 end
 
 ---@class LSPRequest
@@ -386,7 +389,6 @@ function LSPClient:request(request, handler)
     assert(type(handler)          == "table",    "'handler' MUST be a table")
     assert(type(handler.onResult) == "function", "'handler.onResult' MUST be a function")
     assert(type(handler.onError)  == "function", "'handler.onError' MUST be a function")
-    handler.method = request.method
 
     self.sentRequests[self.requestId] = handler
     self.requestId = self.requestId + 1
@@ -493,15 +495,14 @@ function LSPClient:receiveMessage(text)
         handler.onResult(decodedMsg.result)
     elseif decodedMsg.error then
         assert(handler, "MUST NOT BE NIL HERE")
-        handler.onError(handler.method, decodedMsg.error)
+        handler.onError(decodedMsg.error)
     elseif decodedMsg.id and decodedMsg.method then
         self:handleRequest(decodedMsg)
     elseif decodedMsg.method then
         self:handleNotification(decodedMsg)
     elseif self.sentRequests[decodedMsg.id] ~= nil then
-        handler = self.sentRequests[decodedMsg.id]
         self.sentRequests[decodedMsg.id] = nil
-        display_info(("No result for %s"):format(handler.method))
+        display_info("No results")
     else
         log("WARNING: unrecognized message type")
     end
@@ -626,9 +627,10 @@ function hoverAction(bufpane)
     local client = findClient(bufpane.Buf:FileType(), "hoverProvider", "hover information")
     if not client then return end
 
+    local method = "textDocument/hover"
     local buf = bufpane.Buf
     local cursor = buf:GetActiveCursor()
-    local req = Request("textDocument/hover", {
+    local req = Request(method, {
         textDocument = textDocumentIdentifier(buf),
         position = { line = cursor.Y, character = cursor.X }
     })
@@ -657,7 +659,7 @@ function hoverAction(bufpane)
             end
         end,
 
-        onError = defaultOnErrorHandler
+        onError = defaultOnErrorHandler(method)
     })
 end
 
@@ -688,12 +690,13 @@ function formatAction(bufpane)
     end
 
     local filetype = bufpane.Buf:FileType()
-    local client, req, onResult
+    local client, req, onResult, method
     if #selectedRanges == 0 then
         client = findClient(filetype, "documentFormattingProvider", "formatting")
         if not client then return end
 
-        req = Request("textDocument/formatting", {
+        method = "textDocument/formatting"
+        req = Request(method, {
             textDocument = textDocumentIdentifier(buf),
             options = formatOptions
         })
@@ -712,7 +715,8 @@ function formatAction(bufpane)
         client = findClient(filetype, "documentRangeFormattingProvider", "formatting selections")
         if not client then return end
 
-        req = Request("textDocument/rangeFormatting", {
+        method = "textDocument/rangeFormatting"
+        req = Request(method, {
             textDocument = textDocumentIdentifier(buf),
             range = selectedRanges[1],
             options = formatOptions
@@ -731,7 +735,7 @@ function formatAction(bufpane)
 
     client:request(req, {
         onResult = onResult,
-        onError = defaultOnErrorHandler
+        onError = defaultOnErrorHandler(method)
     })
 end
 
@@ -748,6 +752,7 @@ function renameAction(bufpane, args)
     local cursor = buf:GetActiveCursor()
     cursor:Deselect(true) -- selection isn't preserved; place the cursor at the start
 
+    local method = "textDocument/rename"
     local handler = {
         ---@param result? WorkspaceEdit
         onResult = function(result)
@@ -762,11 +767,11 @@ function renameAction(bufpane, args)
                 display_error("Renaming symbol may not have worked properly")
             end
         end,
-        onError = defaultOnErrorHandler
+        onError = defaultOnErrorHandler(method)
     }
 
     if #args > 0 then -- `lsp rename newName`
-        client:request(Request("textDocument/rename", {
+        client:request(Request(method, {
             textDocument = textDocumentIdentifier(buf),
             position = { line = cursor.Y, character = cursor.X },
             newName = args[1],
@@ -779,7 +784,7 @@ function renameAction(bufpane, args)
             nil, -- event callback
             function(newName, canceled) -- done callback
                 if not canceled then
-                    client:request(Request("textDocument/rename", {
+                    client:request(Request(method, {
                         textDocument = textDocumentIdentifier(buf),
                         position = { line = cursor.Y, character = cursor.X },
                         newName = newName,
@@ -794,9 +799,10 @@ function completionAction(bufpane)
     local client = findClient(bufpane.Buf:FileType(), "completionProvider", "completion")
     if not client then return end
 
+    local method = "textDocument/completion"
     local buf = bufpane.Buf
     local cursor = buf:GetActiveCursor()
-    local req = Request("textDocument/completion", {
+    local req = Request(method, {
         textDocument = textDocumentIdentifier(buf),
         position = { line = cursor.Y, character = cursor.X },
         context = {
@@ -867,7 +873,7 @@ function completionAction(bufpane)
                 buf:Autocomplete(completer)
             end
         end,
-        onError = defaultOnErrorHandler
+        onError = defaultOnErrorHandler(method)
     })
 end
 
@@ -895,7 +901,7 @@ function gotoAction(kind)
                     gotoLSPLocation(result)
                 end
             end,
-            onError = defaultOnErrorHandler
+            onError = defaultOnErrorHandler(requestMethod)
         })
     end
 end
@@ -904,9 +910,10 @@ function findReferencesAction(bufpane)
     local client = findClient(bufpane.Buf:FileType(), "referencesProvider", "finding references")
     if not client then return end
 
+    local method = "textDocument/references"
     local buf = bufpane.Buf
     local cursor = buf:GetActiveCursor()
-    local req = Request("textDocument/references", {
+    local req = Request(method, {
         textDocument = textDocumentIdentifier(buf),
         position = { line = cursor.Y, character = cursor.X },
         context = { includeDeclaration = true }
@@ -921,7 +928,7 @@ function findReferencesAction(bufpane)
             end
             showReferenceLocations("[µlsp] references", result)
         end,
-        onError = defaultOnErrorHandler
+        onError = defaultOnErrorHandler(method)
     })
 end
 
@@ -929,7 +936,8 @@ function documentSymbolsAction(bufpane)
     local client = findClient(bufpane.Buf:FileType(), "documentSymbolProvider", "document symbols")
     if not client then return end
 
-    local req = Request("textDocument/documentSymbol", {
+    local method = "textDocument/documentSymbol"
+    local req = Request(method, {
         textDocument = textDocumentIdentifier(bufpane.Buf)
     })
 
@@ -989,7 +997,7 @@ function documentSymbolsAction(bufpane)
 
             showSymbolLocations("[µlsp] document symbols", symbolLocations, symbolLabels)
         end,
-        onError = defaultOnErrorHandler
+        onError = defaultOnErrorHandler(method)
     })
 end
 
