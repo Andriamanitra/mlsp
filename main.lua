@@ -639,7 +639,7 @@ function hoverAction(bufpane)
         ---@param result? Hover
         onResult = function(result)
             local showHoverInfo = function(data)
-                local bf = buffer.NewBuffer(data, "[µlsp] hover")
+                local bf = buffer.NewBuffer(data, "[µlsp] hover-" .. os.time())
                 bf.Type.Scratch = true
                 bf.Type.Readonly = true
                 bufpane:HSplitIndex(bf, true)
