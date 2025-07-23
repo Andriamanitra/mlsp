@@ -1161,6 +1161,9 @@ function preAutocomplete(bufpane)
     end
 
     if not bufpane.Buf.HasSuggestions then
+        for i = 0, bufpane.Buf:NumCursors() - 1 do
+            if bufpane.Buf:GetCursor(i):HasSelection() then return end
+        end
         completionAction(bufpane)
         return false -- cancel the event (a new one is triggered once the server responds)
     end
