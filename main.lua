@@ -1419,12 +1419,14 @@ function absPathFromFileUri(uri)
     end
 end
 
-function relPathFromAbsPath(absPath)
+function pathFromAbsPath(absPath)
     local cwd, err = go_os.Getwd()
     if err then return absPath end
     local relPath
     relPath, err = go_filepath.Rel(cwd, absPath)
-    if err then return absPath end
+    if err or relPath:match("^%.%.") then
+        return absPath
+    end
     return relPath
 end
 
@@ -1701,5 +1703,5 @@ function gotoLSPLocation(result)
     -- now result should be Location
     local filePath = absPathFromFileUri(result.uri)
     local startLoc, _ = LSPRange.toLocs(result.range)
-    openFileAtLoc(filePath, startLoc)
+    openFileAtLoc(pathFromAbsPath(filePath), startLoc)
 end
