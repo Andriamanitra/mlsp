@@ -1444,7 +1444,7 @@ function openFileAtLoc(filePath, loc)
 
     local bp = openExistingBufPane(filePath)
     if bp == nil then
-        local newBuf, err = buffer.NewBufferFromFile(filePath)
+        local newBuf, err = buffer.NewBufferFromFile(pathFromAbsPath(filePath))
         if err ~= nil then
             display_error(err)
             return
@@ -1703,5 +1703,5 @@ function gotoLSPLocation(result)
     -- now result should be Location
     local filePath = absPathFromFileUri(result.uri)
     local startLoc, _ = LSPRange.toLocs(result.range)
-    openFileAtLoc(pathFromAbsPath(filePath), startLoc)
+    openFileAtLoc(filePath, startLoc)
 end
