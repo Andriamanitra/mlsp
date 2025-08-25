@@ -38,18 +38,18 @@ local TextEventType = {
 
 --  https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification/#errorCodes
 local LSPErrorCodes = {
-	[-32700] = "ParseError",
-	[-32600] = "InvalidRequest",
-	[-32601] = "MethodNotFound",
-	[-32602] = "InvalidParams",
-	[-32603] = "InternalError",
+    [-32700] = "ParseError",
+    [-32600] = "InvalidRequest",
+    [-32601] = "MethodNotFound",
+    [-32602] = "InvalidParams",
+    [-32603] = "InternalError",
 
-	[-32002] = "ServerNotInitialized",
-	[-32001] = "UnknownErrorCode",
-	[-32803] = "RequestFailed";
-	[-32802] = "ServerCancelled";
-	[-32801] = "ContentModified";
-	[-32800] = "RequestCancelled";
+    [-32002] = "ServerNotInitialized",
+    [-32001] = "UnknownErrorCode",
+    [-32803] = "RequestFailed",
+    [-32802] = "ServerCancelled",
+    [-32801] = "ContentModified",
+    [-32800] = "RequestCancelled",
 }
 
 function init()
