@@ -36,6 +36,22 @@ local TextEventType = {
     REPLACE = 0
 }
 
+--  https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification/#errorCodes
+local LSPErrorCodes = {
+    [-32700] = "ParseError",
+    [-32600] = "InvalidRequest",
+    [-32601] = "MethodNotFound",
+    [-32602] = "InvalidParams",
+    [-32603] = "InternalError",
+
+    [-32002] = "ServerNotInitialized",
+    [-32001] = "UnknownErrorCode",
+    [-32803] = "RequestFailed",
+    [-32802] = "ServerCancelled",
+    [-32801] = "ContentModified",
+    [-32800] = "RequestCancelled",
+}
+
 function init()
     -- ordering of the table affects the autocomplete suggestion order
     local subcommands = {
@@ -350,7 +366,9 @@ end
 
 function defaultOnErrorHandler(method)
     return function(error)
-        display_error(("%s (Error %d, %s)"):format(error.message, error.code, method))
+        display_error(("%s: %s (%s)"):format(
+            LSPErrorCodes[error.code] or "Error = " .. tostring(error.code), error.message, method
+        ))
     end
 end
 
