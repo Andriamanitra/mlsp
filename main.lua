@@ -1156,6 +1156,46 @@ function onQuit(bufpane)
 
 end
 
+function preSave(bufpane)
+    if not settings.formatOnSave then
+        return
+    end
+
+    local client = findClient(filetype, "documentFormattingProvider", "formatting")
+    if not client then return end
+
+    local formatOptions = {
+        tabSize = bufpane.Buf.Settings["tabsize"],
+        insertSpaces = bufpane.Buf.Settings["tabstospaces"],
+        trimTrailingWhitespace = true,
+        insertFinalNewline = true,
+        trimFinalNewlines = true
+    }
+
+    local filetype = bufpane.Buf:FileType()
+    local method = "textDocument/formatting"
+
+    local req = Request(method, {
+        textDocument = textDocumentIdentifier(bufpane.Buf),
+        options = formatOptions
+    })
+    ---@param result? TextEdit[]
+    local onResult = function(result)
+        if result == nil or next(result) == nil then
+            display_info("Formatted file (no changes)")
+        else
+            local textedits = result
+            applyTextEdits(bufpane.Buf, textedits)
+            display_info("Formatted file")
+            bufpane:Save()
+        end
+    end
+    client:request(req, {
+        onResult = onResult,
+        onError = defaultOnErrorHandler(method)
+    })
+end
+
 function onSave(bufpane)
     for _, client in pairs(activeConnections) do
         client:didSave(bufpane.Buf)
