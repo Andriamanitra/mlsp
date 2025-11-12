@@ -1161,6 +1161,7 @@ function preSave(bufpane)
         return
     end
 
+    local filetype = bufpane.Buf:FileType()
     local client = findClient(filetype, "documentFormattingProvider", "formatting")
     if not client then return end
 
@@ -1172,7 +1173,6 @@ function preSave(bufpane)
         trimFinalNewlines = true
     }
 
-    local filetype = bufpane.Buf:FileType()
     local method = "textDocument/formatting"
 
     local req = Request(method, {
