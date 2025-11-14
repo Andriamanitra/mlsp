@@ -36,6 +36,12 @@ local TextEventType = {
     REPLACE = 0
 }
 
+local TextDocumentSyncKind = {
+    None = 0,
+    Full = 1,
+    Incremental = 2,
+}
+
 --  https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification/#errorCodes
 local LSPErrorCodes = {
     [-32700] = "ParseError",
@@ -1300,11 +1306,21 @@ end
 
 function bufferChanged(buf, changes)
     for _, client in pairs(activeConnections) do
-        local syncKind = client.serverCapabilities.textDocumentSync.change
-        if syncKind == 1 then -- only full document changes are supported
+        -- textDocumentSync can be either TextDocumentSyncOptions (a table)
+        -- or TextDocumentSyncKind (a number)
+        local syncKind = client.serverCapabilities.textDocumentSync
+        if type(syncKind) == "table" then
+            syncKind = syncKind.change
+        end
+
+        if syncKind == TextDocumentSyncKind.None then
+            -- documents should not be synced at all
+        elseif syncKind == TextDocumentSyncKind.Full then
             client.dirtyBufs[buf] = true
-        elseif syncKind == 2 then -- incremental changes are supported
+        elseif syncKind == TextDocumentSyncKind.Incremental then
             client:didChange(buf, changes)
+        else
+            log("Invalid value for syncKind: ", syncKind)
         end
     end
 end
