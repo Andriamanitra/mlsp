@@ -751,6 +751,8 @@ function formatAction(bufpane)
         end
     end
 
+    buf:DeselectCursors() -- do not preserve the selections
+
     client:request(req, {
         onResult = onResult,
         onError = defaultOnErrorHandler(method)
