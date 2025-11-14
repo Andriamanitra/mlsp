@@ -157,6 +157,10 @@ settings = {
     -- key in ~/.config/micro/bindings.json even if this setting is false)
     tabAutocomplete = false,
 
+    -- Send LSP format request when a file is saved. Does nothing if none of the
+    -- active language servers support formatting.
+    formatOnSave = true,
+
     -- Automatically start language server(s) when a buffer with matching
     -- filetype is opened
     autostart = {
