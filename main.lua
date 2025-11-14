@@ -666,7 +666,7 @@ function hoverAction(bufpane)
             -- result.contents being a string or array is deprecated but as of 2023
             -- * pylsp still responds with {"contents": ""} for no results
             -- * lua-lsp still responds with {"contents": []} for no results
-            if result == nil or result.contents == "" or table.empty(result.contents) then
+            if result == json.null or result.contents == "" or table.empty(result.contents) then
                 display_info("No hover results")
             elseif type(result.contents) == "string" then -- MarkedString
                 showHoverInfo(result.contents)
@@ -720,7 +720,7 @@ function formatAction(bufpane)
         })
         ---@param result? TextEdit[]
         onResult = function(result)
-            if result == nil or next(result) == nil then
+            if result == json.null or next(result) == nil then
                 display_info("Formatted file (no changes)")
             else
                 local textedits = result
@@ -741,7 +741,7 @@ function formatAction(bufpane)
         })
         ---@param result? TextEdit[]
         onResult = function(result)
-            if result == nil or next(result) == nil then
+            if result == json.null or next(result) == nil then
                 display_info("Formatted selection (no changes)")
             else
                 local textedits = result
@@ -774,7 +774,7 @@ function renameAction(bufpane, args)
     local handler = {
         ---@param result? WorkspaceEdit
         onResult = function(result)
-            if result == nil or table.empty(result) then
+            if result == json.null or table.empty(result) then
                 display_info("Renamed symbol (no changes required)")
                 return
             end
@@ -834,7 +834,7 @@ function completionAction(bufpane)
         onResult = function(result)
             -- TODO: handle result.isIncomplete = true somehow
             local completionitems = {}
-            if result ~= nil then
+            if result ~= json.null then
                 -- result can be either CompletionItem[] or an object
                 -- { isIncomplete: bool, items: CompletionItem[] }
                 completionitems = result.items or result
@@ -913,7 +913,7 @@ function gotoAction(kind)
         client:request(req, {
             ---@param result? Location | Location[] | LocationLink[]
             onResult = function(result)
-                if result == nil or table.empty(result) then
+                if result == json.null or table.empty(result) then
                     display_info(("%s not found"):format(kind))
                 else
                     gotoLSPLocation(result)
@@ -940,7 +940,7 @@ function findReferencesAction(bufpane)
     client:request(req, {
         ---@param result? Location[]
         onResult = function(result)
-            if result == nil or table.empty(result) then
+            if result == json.null or table.empty(result) then
                 display_info("No references found")
                 return
             end
@@ -962,7 +962,7 @@ function documentSymbolsAction(bufpane)
     client:request(req, {
         ---@param result? DocumentSymbol[]
         onResult = function(result)
-            if result == nil or table.empty(result) then
+            if result == json.null or table.empty(result) then
                 display_info("No symbols found in current document")
                 return
             end
