@@ -1097,6 +1097,9 @@ function onExit(_text, userargs)
         end
         display_error(reasonMsg)
         log(reasonMsg)
+        if client.stderr ~= "" then
+            log(string.format("%s stderr:\n%s", clientId, client.stderr))
+        end
     end
     activeConnections[clientId] = nil
     allConnections[clientId] = nil
