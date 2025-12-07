@@ -285,7 +285,7 @@ function LSPClient:initialize(server)
     log(string.format("Started '%s' with args", server.cmd), server.args)
 
     local wd, _ = go_os.Getwd()
-    local rootUri = string.format("file://%s", wd:uriEncode())
+    local rootUri = fileUriFromAbsPath(wd)
 
     local params = {
         processId = go_os.Getpid(),
@@ -1450,6 +1450,10 @@ end
 function absPathFromFileUri(uri)
     local match = uri:match("file://(.*)$")
     if match then
+        -- remove leading '/' on Windows
+        if package.config:sub(1,1) == "\\" then
+            return match:sub(2):uriDecode()
+        end
         return match:uriDecode()
     else
         return uri
@@ -1633,8 +1637,13 @@ function keyIterator(dict)
     end
 end
 
+function fileUriFromAbsPath(s)
+    local pathWithoutLeadingSlash = string.match(s, "^/?(.*)")
+    return string.format("file:///%s", pathWithoutLeadingSlash:uriEncode())
+end
+
 function textDocumentIdentifier(buf)
-    return { uri = string.format("file://%s", buf.AbsPath:uriEncode()) }
+    return { uri = fileUriFromAbsPath(buf.AbsPath) }
 end
 
 ---@param buf Buffer
