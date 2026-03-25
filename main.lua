@@ -847,9 +847,11 @@ function completionAction(bufpane)
             end
 
             local function bySortText(itemA, itemB)
-                local a = itemA.sortText or itemA.label
-                local b = itemB.sortText or itemB.label
-                return string.lower(a) < string.lower(b)
+                if itemA.sortText == itemB.sortText then
+                    return string.lower(itemA.label) < string.lower(itemB.label)
+                else
+                    return string.lower(itemA.sortText) < string.lower(itemB.sortText)
+                end
             end
 
             table.sort(completionitems, bySortText)
