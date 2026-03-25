@@ -1639,12 +1639,18 @@ function keyIterator(dict)
 end
 
 function fileUriFromAbsPath(s)
-    local pathWithoutLeadingSlash = string.match(s, "^/?(.*)")
-    return string.format("file:///%s", pathWithoutLeadingSlash:uriEncode())
-end
+	if s:match("^%a:\\") ~= nil then
+		s = s:gsub("\\", "/")
+		local drive, rest = s:match("^([A-Za-z]:)(.*)")
+        rest = rest:uriEncode()
+		windowspath = drive .. rest
+		windowspathWithoutLeadingSlash = string.match(windowspath, "^/?(.*)")
+		return "file:///" .. windowspathpathWithoutLeadingSlash
+    else
+	    local pathWithoutLeadingSlash = string.match(s, "^/?(.*)")
 
-function textDocumentIdentifier(buf)
-    return { uri = fileUriFromAbsPath(buf.AbsPath) }
+	    return string.format("file:///%s", pathWithoutLeadingSlash:uriEncode())
+	end
 end
 
 ---@param buf Buffer
