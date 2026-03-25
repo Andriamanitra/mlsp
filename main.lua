@@ -1450,12 +1450,13 @@ end
 function absPathFromFileUri(uri)
     local match = uri:match("file://(.*)$")
     if match then
-        -- remove leading '/' on Windows
-        if package.config:sub(1,1) == "\\" then
-            return match:sub(2):uriDecode()
-        end
-        return match:uriDecode()
-    else
+		match = match:uriDecode()
+		match = match:gsub("^/([A-Za-z]:)", "%1")
+		if match:match("^%a:\\") ~= nil then
+	        match = match:gsub("\\", "/")
+		end
+		return match
+	else
         return uri
     end
 end
