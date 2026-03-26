@@ -1646,7 +1646,7 @@ function fileUriFromAbsPath(s)
         rest = rest:uriEncode()
 		windowspath = drive .. rest
 		windowspathWithoutLeadingSlash = string.match(windowspath, "^/?(.*)")
-		return "file:///" .. windowspathpathWithoutLeadingSlash
+		return "file:///" .. windowspathWithoutLeadingSlash
     else
 	    local pathWithoutLeadingSlash = string.match(s, "^/?(.*)")
 
