@@ -1643,7 +1643,6 @@ end
 
 function fileUriFromAbsPath(s)
 	if s:match("^%a:\\") ~= nil then
-        s = s:upper()
 		s = s:gsub("\\", "/")
 		local drive, rest = s:match("^([A-Za-z]:)(.*)")
         drive = drive:upper()
