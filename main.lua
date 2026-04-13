@@ -1454,9 +1454,9 @@ function absPathFromFileUri(uri)
 		match = match:uriDecode()
 		match = match:gsub("^/([A-Za-z]:)", "%1")
 		if match:match("^%a:\\") ~= nil then
-	        match = match:gsub("\\", "/")
+	        match = match:gsub("\\", "/").upper()
 		end
-		return match:upper()
+		return match
 	else
         return uri
     end
@@ -1640,8 +1640,8 @@ function keyIterator(dict)
 end
 
 function fileUriFromAbsPath(s)
-    s = s:upper()
 	if s:match("^%a:\\") ~= nil then
+        s = s:upper()
 		s = s:gsub("\\", "/")
 		local drive, rest = s:match("^([A-Za-z]:)(.*)")
         rest = rest:uriEncode()
