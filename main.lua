@@ -1453,8 +1453,10 @@ function absPathFromFileUri(uri)
         match = match:gsub("%%3[aA]", ":")
 		match = match:uriDecode()
 		match = match:gsub("^/([A-Za-z]:)", "%1")
-		if match:match("^%a:\\") ~= nil then
-	        match = match:gsub("\\", "/").upper()
+        if match:match("^%a:[/\\]") ~= nil then
+            match = match:gsub("\\", "/")
+            match = match:gsub("^%a:", string.upper)
+            return match
 		end
 		return match
 	else
@@ -1644,6 +1646,7 @@ function fileUriFromAbsPath(s)
         s = s:upper()
 		s = s:gsub("\\", "/")
 		local drive, rest = s:match("^([A-Za-z]:)(.*)")
+        drive = drive:upper()
         rest = rest:uriEncode()
 		windowspath = drive .. rest
 		windowspathWithoutLeadingSlash = string.match(windowspath, "^/?(.*)")
