@@ -1456,7 +1456,7 @@ function absPathFromFileUri(uri)
 		if match:match("^%a:\\") ~= nil then
 	        match = match:gsub("\\", "/")
 		end
-		return match
+		return match:upper()
 	else
         return uri
     end
@@ -1640,6 +1640,7 @@ function keyIterator(dict)
 end
 
 function fileUriFromAbsPath(s)
+    s = s:upper()
 	if s:match("^%a:\\") ~= nil then
 		s = s:gsub("\\", "/")
 		local drive, rest = s:match("^([A-Za-z]:)(.*)")
@@ -1652,6 +1653,10 @@ function fileUriFromAbsPath(s)
 
 	    return string.format("file:///%s", pathWithoutLeadingSlash:uriEncode())
 	end
+end
+
+function textDocumentIdentifier(buf)
+    return { uri = fileUriFromAbsPath(buf.AbsPath) }
 end
 
 ---@param buf Buffer
