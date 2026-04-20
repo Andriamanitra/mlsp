@@ -1450,8 +1450,7 @@ end
 function absPathFromFileUri(uri)
     local match = uri:match("file://(.*)$")
     if match then
-        match = match:gsub("%%3[aA]", ":")
-		match = match:uriDecode()
+        match = match:uriDecode()
 		match = match:gsub("^/([A-Za-z]:)", "%1")
         if match:match("^%a:[/\\]") ~= nil then
             match = match:gsub("\\", "/")
