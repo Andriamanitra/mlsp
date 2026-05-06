@@ -1643,12 +1643,10 @@ function fileUriFromAbsPath(s)
         local drive, rest = s:match("^([A-Za-z]:)(.*)")
         drive = drive:upper()
         rest = rest:uriEncode()
-        windowspath = drive .. rest
-        windowspathWithoutLeadingSlash = string.match(windowspath, "^/?(.*)")
-        return "file:///" .. windowspathWithoutLeadingSlash
+        local windowspath = drive .. rest
+        return "file:///" .. windowspath
     else
         local pathWithoutLeadingSlash = string.match(s, "^/?(.*)")
-
         return string.format("file:///%s", pathWithoutLeadingSlash:uriEncode())
     end
 end
