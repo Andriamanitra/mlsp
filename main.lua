@@ -8,13 +8,14 @@ local util = import("micro/util")
 local go_os = import("os")
 local go_strings = import("strings")
 local go_filepath = import("path/filepath")
+local runtime = import("runtime")
 
 local settings = settings
 local json = json
 
 local activeConnections = {}
 local allConnections = {}
-setmetatable(allConnections, { __index = function (_, k) return activeConnections[k] end })
+setmetatable(allConnections, { __index = function(_, k) return activeConnections[k] end })
 local docBuffers = {}
 local undoStackLengthBefore = 0
 
@@ -73,12 +74,12 @@ function init()
         ["goto-implementation"] = gotoAction("implementation"),
         ["goto-typedefinition"] = gotoAction("typeDefinition"),
         ["hover"]               = hoverAction,
-        ["sync-document"]       = function (bp) syncFullDocument(bp.Buf) end,
+        ["sync-document"]       = function(bp) syncFullDocument(bp.Buf) end,
         ["autocomplete"]        = completionAction,
         ["showlog"]             = showLog,
     }
 
-    local lspCompleter = function (buf)
+    local lspCompleter = function(buf)
         local args = {}
         local splits = go_strings.Split(buf:Line(0):gsub("%s+", " "), " ")
         for i = 1, #splits do table.insert(args, splits[i]) end
@@ -89,7 +90,9 @@ function init()
                 iterator = keyIterator(languageServer)
             elseif args[2] == "stop" then
                 iterator = keyIterator(activeConnections)
-            else return nil, nil end
+            else
+                return nil, nil
+            end
         elseif #args > 2 then
             return nil, nil
         end
@@ -294,7 +297,7 @@ function LSPClient:initialize(server)
         capabilities = {
             textDocument = {
                 synchronization = { didSave = true, willSave = false },
-                hover = { contentFormat = {"plaintext"} },
+                hover = { contentFormat = { "plaintext" } },
                 completion = {
                     completionItem = {
                         snippetSupport = false,
@@ -410,9 +413,9 @@ function LSPClient:request(request, handler)
     assert(request, "MUST not be nil")
     request.id = self.requestId -- set the correct Id
 
-    assert(type(handler)          == "table",    "'handler' MUST be a table")
+    assert(type(handler) == "table", "'handler' MUST be a table")
     assert(type(handler.onResult) == "function", "'handler.onResult' MUST be a function")
-    assert(type(handler.onError)  == "function", "'handler.onError' MUST be a function")
+    assert(type(handler.onError) == "function", "'handler.onError' MUST be a function")
 
     self.sentRequests[self.requestId] = handler
     self.requestId = self.requestId + 1
@@ -479,7 +482,7 @@ function LSPClient:handleNotification(notification)
         if notification.params.type == MessageType.Error then
             display_error(notification.params.message)
         elseif notification.params.type == MessageType.Warning
-        or notification.params.type == MessageType.Info then
+            or notification.params.type == MessageType.Info then
             display_info(notification.params.message)
         end
     elseif notification.method == "window/logMessage" then
@@ -494,7 +497,7 @@ function LSPClient:handleRequest(request)
         if request.params.type == MessageType.Error then
             display_error(request.params.message)
         elseif request.params.type == MessageType.Warning
-        or request.params.type == MessageType.Info then
+            or request.params.type == MessageType.Info then
             display_info(request.params.message)
         end
         -- TODO: make it possible to respond with one of request.params.actions
@@ -547,7 +550,7 @@ function LSPClient:didOpen(buf)
     local filetype = buf:FileType()
     if filetype ~= "unknown" and not self:supportsFiletype(filetype) then
         log(string.format("'%s' doesn't support '%s' filetype. 'didOpen' cancelled for '%s'",
-                          self.clientId, filetype, buf:GetName()))
+            self.clientId, filetype, buf:GetName()))
         return
     end
 
@@ -604,7 +607,6 @@ function LSPClient:didSave(buf)
 end
 
 function LSPClient:onStdout(text)
-
     -- TODO: figure out if this is a performance bottleneck when receiving long
     -- messages (tens of thousands of bytes) – I suspect Go's buffers would be
     -- much faster than Lua string concatenation
@@ -619,11 +621,9 @@ function LSPClient:onStdout(text)
             local headers = self.buffer:sub(0, a)
             local _, _, m = headers:find("Content%-Length: (%d+)")
             self.expectedLength = tonumber(m)
-            self.buffer = self.buffer:sub(b+1)
-
+            self.buffer = self.buffer:sub(b + 1)
         elseif self.buffer:len() < self.expectedLength then
             return
-
         else
             -- receive content
             self:receiveMessage(self.buffer:sub(0, self.expectedLength))
@@ -644,7 +644,6 @@ end
 function display_info(...)
     micro.InfoBar():Message("[µlsp] ", unpack(arg))
 end
-
 
 -- USER TRIGGERED ACTIONS
 function hoverAction(bufpane)
@@ -674,7 +673,7 @@ function hoverAction(bufpane)
             -- * lua-lsp still responds with {"contents": []} for no results
             if result == json.null or result.contents == "" or table.empty(result.contents) then
                 display_info("No hover results")
-            elseif type(result.contents) == "string" then -- MarkedString
+            elseif type(result.contents) == "string" then       -- MarkedString
                 showHoverInfo(result.contents)
             elseif type(result.contents.value) == "string" then -- MarkedString | MarkupContent
                 showHoverInfo(result.contents.value)
@@ -734,7 +733,6 @@ function formatAction(bufpane)
                 display_info("Formatted file")
             end
         end
-
     else
         client = findClient(filetype, "documentRangeFormattingProvider", "formatting selections")
         if not client then return end
@@ -803,9 +801,9 @@ function renameAction(bufpane, args)
     else -- `lsp rename`
         micro.InfoBar():Prompt(
             string.format("[µlsp] rename symbol at line %d column %d to: ", cursor.Y + 1, cursor.X + 1),
-            "", -- placeholder
-            "µlsp-rename-symbol", -- prompt type (prompts with same type share history)
-            nil, -- event callback
+            "",                         -- placeholder
+            "µlsp-rename-symbol",       -- prompt type (prompts with same type share history)
+            nil,                        -- event callback
             function(newName, canceled) -- done callback
                 if not canceled then
                     client:request(Request(method, {
@@ -868,7 +866,7 @@ function completionAction(bufpane)
             for i, item in ipairs(completionitems) do
                 -- discard completions that don't start with the stem under cursor
                 if string.startsWith(item.filterText or item.label, stem) then
-                    if i > 1 and completionitems[i-1].label == item.label then
+                    if i > 1 and completionitems[i - 1].label == item.label then
                         -- skip duplicate
                     elseif item.insertTextFormat == InsertTextFormat.Snippet then
                         -- TODO: support snippets
@@ -1016,7 +1014,7 @@ function documentSymbolsAction(bufpane)
                 else
                     table.insert(symbolLocations, sym.location)
                 end
-                table.insert(symbolLabels, string.format("%-15s %s", "["..SYMBOLKINDS[sym.kind].."]", sym.name))
+                table.insert(symbolLabels, string.format("%-15s %s", "[" .. SYMBOLKINDS[sym.kind] .. "]", sym.name))
             end
 
             showSymbolLocations("[µlsp] document symbols", symbolLocations, symbolLabels)
@@ -1064,7 +1062,6 @@ function openDiagnosticBufferAction(bufpane)
         display_info("Found no diagnostics on current line")
     end
 end
-
 
 -- EVENTS (LUA CALLBACKS)
 -- https://github.com/zyedidia/micro/blob/master/runtime/help/plugins.md#lua-callbacks
@@ -1162,7 +1159,6 @@ function onQuit(bufpane)
             client:didClose(closedBuf)
         end
     end
-
 end
 
 function onSave(bufpane)
@@ -1259,6 +1255,7 @@ end
 function preUndo(bp)
     undoStackLengthBefore = bp.Buf.UndoStack:Len()
 end
+
 function onUndo(bp)
     local numUndos = undoStackLengthBefore - bp.Buf.UndoStack:Len()
     return handleUndosRedos(bp.Buf, bp.Buf.RedoStack.Top, numUndos)
@@ -1267,6 +1264,7 @@ end
 function preRedo(bp)
     undoStackLengthBefore = bp.Buf.UndoStack:Len()
 end
+
 function onRedo(bp)
     local numRedos = bp.Buf.UndoStack:Len() - undoStackLengthBefore
     return handleUndosRedos(bp.Buf, bp.Buf.UndoStack.Top, numRedos)
@@ -1358,7 +1356,6 @@ function string.uriEncode(str)
     return str
 end
 
-
 function table.empty(x)
     return type(x) == "table" and next(x) == nil
 end
@@ -1374,7 +1371,6 @@ function severityToString(severity)
 end
 
 function showDiagnostics(buf, owner, diagnostics)
-
     buf:ClearMessages(owner)
 
     for _, diagnostic in pairs(diagnostics) do
@@ -1430,8 +1426,8 @@ function findClient(filetype, capability, capabilityDescription)
 
     for _, client in pairs(activeConnections) do
         if client.filetypes ~= nil
-        and client:supportsFiletype(filetype)
-        and client:hasCapability(capability) then
+            and client:supportsFiletype(filetype)
+            and client:hasCapability(capability) then
             return client
         end
     end
@@ -1451,15 +1447,15 @@ function absPathFromFileUri(uri)
     local match = uri:match("file://(.*)$")
     if match then
         match = match:gsub("%%3[aA]", ":")
-		match = match:uriDecode()
-		match = match:gsub("^/([A-Za-z]:)", "%1")
-        if match:match("^%a:[/\\]") ~= nil then
+        match = match:uriDecode()
+        match = match:gsub("^/([A-Za-z]:)", "%1")
+        if runtime.GOOS == "windows" then
             match = match:gsub("\\", "/")
             match = match:gsub("^%a:", string.upper)
             return match
-		end
-		return match
-	else
+        end
+        return match
+    else
         return uri
     end
 end
@@ -1499,9 +1495,9 @@ function openFileAtLoc(filePath, loc)
         bp:OpenBuffer(newBuf)
     end
 
-    bp.Buf:ClearCursors() -- remove multicursors
+    bp.Buf:ClearCursors()    -- remove multicursors
     local cursor = bp.Buf:GetActiveCursor()
-    cursor:Deselect(false) -- clear selection
+    cursor:Deselect(false)   -- clear selection
     cursor:GotoLoc(loc)
     bp.Buf:RelocateCursors() -- make sure cursor is inside the buffer
     bp:Center()
@@ -1603,7 +1599,7 @@ function findBufPaneByPath(fpath)
 end
 
 function bufpaneIterator()
-    local co = coroutine.create(function ()
+    local co = coroutine.create(function()
         for tabIdx, tab in userdataIterator(micro.Tabs().List) do
             for paneIdx, pane in userdataIterator(tab.Panes) do
                 -- pane.Buf is nil for panes that are not BufPanes (terminals etc)
@@ -1624,7 +1620,7 @@ end
 
 function userdataIterator(data)
     local idx = 0
-    return function ()
+    return function()
         idx = idx + 1
         local success, item = pcall(function() return data[idx] end)
         if success then return idx, item end
@@ -1642,19 +1638,19 @@ function keyIterator(dict)
 end
 
 function fileUriFromAbsPath(s)
-	if s:match("^%a:\\") ~= nil then
-		s = s:gsub("\\", "/")
-		local drive, rest = s:match("^([A-Za-z]:)(.*)")
+    if runtime.GOOS == "windows" then
+        s = s:gsub("\\", "/")
+        local drive, rest = s:match("^([A-Za-z]:)(.*)")
         drive = drive:upper()
         rest = rest:uriEncode()
-		windowspath = drive .. rest
-		windowspathWithoutLeadingSlash = string.match(windowspath, "^/?(.*)")
-		return "file:///" .. windowspathWithoutLeadingSlash
+        windowspath = drive .. rest
+        windowspathWithoutLeadingSlash = string.match(windowspath, "^/?(.*)")
+        return "file:///" .. windowspathWithoutLeadingSlash
     else
-	    local pathWithoutLeadingSlash = string.match(s, "^/?(.*)")
+        local pathWithoutLeadingSlash = string.match(s, "^/?(.*)")
 
-	    return string.format("file:///%s", pathWithoutLeadingSlash:uriEncode())
-	end
+        return string.format("file:///%s", pathWithoutLeadingSlash:uriEncode())
+    end
 end
 
 function textDocumentIdentifier(buf)
@@ -1679,7 +1675,7 @@ function applyTextEdits(buf, edits)
     local function sortEditsLastFirst(A, B)
         local as, bs = A.range.start, B.range.start
         return as.line > bs.line
-           or (as.line == bs.line and as.character >= bs.character)
+            or (as.line == bs.line and as.character >= bs.character)
     end
 
     table.sort(edits, sortEditsLastFirst)
