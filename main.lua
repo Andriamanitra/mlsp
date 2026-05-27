@@ -10,6 +10,7 @@ local go_strings = import("strings")
 local go_filepath = import("path/filepath")
 
 local settings = settings
+local gotoMode = gotoMode
 local json = json
 
 local activeConnections = {}
@@ -1488,7 +1489,7 @@ function openFileAtLoc(filePath, loc)
             display_error(err)
             return
         end
-        if settings.newTabGotoDefinition then
+        if settings.gotoMode == gotoMode.newTab then
             micro.CurPane():AddTab()
         end
         bp = micro.CurPane()
