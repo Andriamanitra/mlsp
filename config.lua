@@ -199,4 +199,7 @@ settings = {
         information = false,
         hint        = false
     },
+
+    -- Open a new tab when jumping to definition
+    newTabGotoDefinition = true,
 }

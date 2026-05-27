@@ -1488,7 +1488,9 @@ function openFileAtLoc(filePath, loc)
             display_error(err)
             return
         end
-        micro.CurPane():AddTab()
+        if settings.newTabGotoDefinition then
+            micro.CurPane():AddTab()
+        end
         bp = micro.CurPane()
         bp:OpenBuffer(newBuf)
     end
