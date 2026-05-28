@@ -150,6 +150,12 @@ for _, server in pairs(languageServer) do
 end
 
 
+-- Modes for how goto-definition displays the target buffer
+gotoMode = {
+    default     = "default",
+    currentPane = "currentPane",
+}
+
 settings = {
 
     -- Use LSP completion in place of micro's default Autocomplete action when
@@ -199,4 +205,9 @@ settings = {
         information = false,
         hint        = false
     },
+
+    -- How to display the target buffer when jumping to definition:
+    --   gotoMode.default       - reuse open buffers if they exist, otherwise open a new tab
+    --   gotoMode.currentPane   - replace the current pane's buffer
+    gotoMode = gotoMode.default,
 }
