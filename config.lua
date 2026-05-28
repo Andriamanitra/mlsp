@@ -152,7 +152,7 @@ end
 
 -- Modes for how goto-definition displays the target buffer
 gotoMode = {
-    newTab      = "newTab",
+    default     = "default",
     currentPane = "currentPane",
 }
 
@@ -207,7 +207,7 @@ settings = {
     },
 
     -- How to display the target buffer when jumping to definition:
-    --   gotoMode.newTab        - open the target in a new tab (default)
+    --   gotoMode.default       - reuse open buffers if they exist, otherwise open a new tab
     --   gotoMode.currentPane   - replace the current pane's buffer
-    gotoMode = gotoMode.newTab,
+    gotoMode = gotoMode.default,
 }

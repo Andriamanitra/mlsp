@@ -1489,7 +1489,7 @@ function openFileAtLoc(filePath, loc)
             display_error(err)
             return
         end
-        if settings.gotoMode == gotoMode.newTab then
+        if settings.gotoMode == gotoMode.default then
             micro.CurPane():AddTab()
         end
         bp = micro.CurPane()
