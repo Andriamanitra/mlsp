@@ -64,6 +64,7 @@ something like this to your `bindings.json`:
 - [x] autocomplete using tab (disabled by default, edit `config.lua` to enable)
 - [x] format document
 - [x] format selection
+- [x] format on save (disabled by default, set `formatOnSave` to true in `config.lua`)
 - [x] go to definition
 - [x] go to declaration
 - [x] go to implementation
