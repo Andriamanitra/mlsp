@@ -303,6 +303,9 @@ function LSPClient:initialize(server)
                     },
                     contextSupport = true
                 }
+            },
+            general = {
+                positionEncodings = {"utf-32"}
             }
         }
     }
@@ -320,6 +323,11 @@ function LSPClient:initialize(server)
                 display_info(("Initialized %s version %s"):format(client.serverName, client.serverVersion))
             else
                 display_info(("Initialized '%s' (no version information)"):format(client.clientId))
+            end
+            -- TODO: do something more clever
+            local positionEncoding = client.serverCapabilities.positionEncoding
+            if positionEncoding ~= "utf-32" then
+                log("WARNING: server does not support utf-32 position encoding, multi-byte characters will cause problems!")
             end
             client:notification("initialized")
             activeConnections[client.clientId] = client
