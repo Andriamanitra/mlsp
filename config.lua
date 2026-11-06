@@ -85,6 +85,15 @@ languageServer = {
         args = {"server"},
         filetypes = {"markdown"}
     },
+    nilServer = {
+        shortName = "nil",
+        cmd = "nil",
+        filetypes = {"nix"},
+    },
+    nixd = {
+        cmd = "nixd",
+        filetypes = {"nix"},
+    },
     ols = {
         cmd = "ols",
         filetypes = {"odin"},
@@ -186,6 +195,7 @@ settings = {
         json       = languageServer.deno,
         lua        = languageServer.luals,
         markdown   = languageServer.deno,
+        nix        = languageServer.nixd,
         odin       = languageServer.ols,
         python     = languageServer.pylsp,
         ruby       = languageServer.rubylsp,

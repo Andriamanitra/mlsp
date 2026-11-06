@@ -7,9 +7,10 @@
 * [Haskell](#haskell)
 * [JavaScript/TypeScript](#javascripttypescript)
 * [JSON](#json)
-* [Odin](#odin)
 * [Lua](#lua)
 * [Markdown](#markdown)
+* [Nix](#nix)
+* [Odin](#odin)
 * [Python](#python)
 * [Ruby](#ruby)
 * [Rust](#rust)
@@ -94,6 +95,16 @@
   - Installation:
     [instructions](https://github.com/artempyanykh/marksman/blob/main/docs/install.md)
   - Command: `marksman server`
+
+## Nix
+
+- [nil](https://github.com/oxalica/nil)
+  - Installation: [instructions](https://github.com/oxalica/nil#installation)
+  - Command: `nil`
+- [nixd](https://github.com/nix-community/nixd)
+  - Installation:
+    [instructions](https://github.com/nix-community/nixd/blob/main/nixd/docs/editor-setup.md#installation---get-a-working-executable)
+  - Command: `nixd`
 
 ## Odin
 
