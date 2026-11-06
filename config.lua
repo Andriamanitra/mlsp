@@ -85,6 +85,11 @@ languageServer = {
         args = {"server"},
         filetypes = {"markdown"}
     },
+    nilServer = {
+        shortName = "nil",
+        cmd = "nil",
+        filetypes = {"nix"},
+    },
     nixd = {
         cmd = "nixd",
         filetypes = {"nix"},

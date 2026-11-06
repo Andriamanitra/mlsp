@@ -98,6 +98,9 @@
 
 ## Nix
 
+- [nil](https://github.com/oxalica/nil)
+  - Installation: [instructions](https://github.com/oxalica/nil#installation)
+  - Command: `nil`
 - [nixd](https://github.com/nix-community/nixd)
   - Installation:
     [instructions](https://github.com/nix-community/nixd/blob/main/nixd/docs/editor-setup.md#installation---get-a-working-executable)
