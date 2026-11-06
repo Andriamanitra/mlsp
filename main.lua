@@ -136,16 +136,82 @@ end
 local LSPClient = {}
 LSPClient.__index = LSPClient
 
+-- decode one UTF-8 sequence starting at 1-based index i, bounds-checked against n = #bytes
+-- returns codepoint, number of bytes consumed, or nil, 0 if i is past the end
+local function utf8_decode_bytes(bytes, i, n)
+  if i > n then return nil, 0 end
+  local b1 = bytes[i]
+  if b1 < 0x80 then
+    return b1, 1
+  elseif b1 >= 0xF0 then
+    if i + 3 > n then return nil, 0 end
+    local b2, b3, b4 = bytes[i+1], bytes[i+2], bytes[i+3]
+    return ((b1 - 0xF0) * 0x40000) + ((b2 - 0x80) * 0x1000)
+         + ((b3 - 0x80) * 0x40) + (b4 - 0x80), 4
+  elseif b1 >= 0xE0 then
+    if i + 2 > n then return nil, 0 end
+    local b2, b3 = bytes[i+1], bytes[i+2]
+    return ((b1 - 0xE0) * 0x1000) + ((b2 - 0x80) * 0x40) + (b3 - 0x80), 3
+  elseif b1 >= 0xC0 then
+    if i + 1 > n then return nil, 0 end
+    local b2 = bytes[i+1]
+    return ((b1 - 0xC0) * 0x40) + (b2 - 0x80), 2
+  else
+    return b1, 1 -- malformed continuation byte in lead position
+  end
+end
+
+local function utf32_col_to_utf16(bytes, rune_col)
+    local n = #bytes
+    local byte_pos, utf16_off, rune_idx = 1, 0, 0
+    while rune_idx < rune_col do
+        local cp, len = utf8_decode_bytes(bytes, byte_pos, n)
+        if not cp then break end
+        utf16_off = utf16_off + (cp > 0xFFFF and 2 or 1)
+        byte_pos = byte_pos + len
+        rune_idx = rune_idx + 1
+    end
+    return utf16_off
+end
+
+local function utf16_col_to_utf32(bytes, utf16_col)
+    local n = #bytes
+    local byte_pos, utf16_off, rune_idx = 1, 0, 0
+    while utf16_off < utf16_col do
+        local cp, len = utf8_decode_bytes(bytes, byte_pos, n)
+        if not cp then break end
+        utf16_off = utf16_off + (cp > 0xFFFF and 2 or 1)
+        byte_pos = byte_pos + len
+        rune_idx = rune_idx + 1
+    end
+    return rune_idx
+end
+
+local LSPPosition = {
+    fromLoc = function(buf, loc)
+        local lineNum = loc.Y
+        local line = buf:LineBytes(lineNum)
+        local columnNum = utf32_col_to_utf16(line, loc.X)
+        return { line = lineNum, character = columnNum }
+    end,
+    toLoc = function(buf, pos)
+        local lineNum = pos.line
+        local line = buf:LineBytes(lineNum)
+        local columnNum = utf16_col_to_utf32(line, pos.character)
+        return buffer.Loc(columnNum, lineNum)
+    end
+}
+
 local LSPRange = {
-    fromSelection = function(selection)
+    fromSelection = function(buf, selection)
         -- create Range https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#range
         -- from [2]Loc https://pkg.go.dev/github.com/zyedidia/micro/v2@v2.0.12/internal/buffer#Cursor
         return {
-            ["start"] = { line = selection[1].Y, character = selection[1].X },
-            ["end"]   = { line = selection[2].Y, character = selection[2].X }
+            ["start"] = LSPPosition.fromLoc(buf, selection[1]),
+            ["end"]   = LSPPosition.fromLoc(buf, selection[2])
         }
     end,
-    fromDelta = function(delta)
+    fromDelta = function(buf, delta)
         local deltaEnd = delta.End
         -- for some reason delta.End is often 0,0 when inserting characters
         if deltaEnd.Y == 0 and deltaEnd.X == 0 then
@@ -153,13 +219,13 @@ local LSPRange = {
         end
 
         return {
-            ["start"] = { line = delta.Start.Y, character = delta.Start.X },
-            ["end"]   = { line = deltaEnd.Y, character = deltaEnd.X }
+            ["start"] = LSPPosition.fromLoc(buf, delta.Start),
+            ["end"]   = LSPPosition.fromLoc(buf, deltaEnd)
         }
     end,
-    toLocs = function(range)
+    toLocs = function(buf, range)
         local a, b = range["start"], range["end"]
-        return buffer.Loc(a.character, a.line), buffer.Loc(b.character, b.line)
+        return LSPPosition.toLoc(buf, a), LSPPosition.toLoc(buf, b)
     end
 }
 
@@ -665,7 +731,7 @@ function hoverAction(bufpane)
     local cursor = buf:GetActiveCursor()
     local req = Request(method, {
         textDocument = textDocumentIdentifier(buf),
-        position = { line = cursor.Y, character = cursor.X }
+        position = LSPPosition.fromLoc(buf, cursor)
     })
 
     client:request(req, {
@@ -713,7 +779,7 @@ function formatAction(bufpane)
     for i = 1, #buf:GetCursors() do
         local cursor = buf:GetCursor(i - 1)
         if cursor:HasSelection() then
-            table.insert(selectedRanges, LSPRange.fromSelection(cursor.CurSelection))
+            table.insert(selectedRanges, LSPRange.fromSelection(buf, cursor.CurSelection))
         end
     end
 
@@ -806,7 +872,7 @@ function renameAction(bufpane, args)
     if #args > 0 then -- `lsp rename newName`
         client:request(Request(method, {
             textDocument = textDocumentIdentifier(buf),
-            position = { line = cursor.Y, character = cursor.X },
+            position = LSPPosition.fromLoc(buf, cursor),
             newName = args[1],
         }), handler)
     else -- `lsp rename`
@@ -819,7 +885,7 @@ function renameAction(bufpane, args)
                 if not canceled then
                     client:request(Request(method, {
                         textDocument = textDocumentIdentifier(buf),
-                        position = { line = cursor.Y, character = cursor.X },
+                        position = LSPPosition.fromLoc(buf, cursor),
                         newName = newName,
                     }), handler)
                 end
@@ -837,7 +903,7 @@ function completionAction(bufpane)
     local cursor = buf:GetActiveCursor()
     local req = Request(method, {
         textDocument = textDocumentIdentifier(buf),
-        position = { line = cursor.Y, character = cursor.X },
+        position = LSPPosition.fromLoc(buf, cursor),
         context = {
             -- 1 = Invoked, 2 = TriggerCharacter, 3 = TriggerForIncompleteCompletions
             triggerKind = 1,
@@ -924,7 +990,7 @@ function gotoAction(kind)
         local cursor = buf:GetActiveCursor()
         local req = Request(requestMethod, {
             textDocument = textDocumentIdentifier(buf),
-            position = { line = cursor.Y, character = cursor.X }
+            position = LSPPosition.fromLoc(buf, cursor)
         })
 
         client:request(req, {
@@ -950,7 +1016,7 @@ function findReferencesAction(bufpane)
     local cursor = buf:GetActiveCursor()
     local req = Request(method, {
         textDocument = textDocumentIdentifier(buf),
-        position = { line = cursor.Y, character = cursor.X },
+        position = LSPPosition.fromLoc(buf, cursor),
         context = { includeDeclaration = true }
     })
 
@@ -1047,7 +1113,7 @@ function openDiagnosticBufferAction(bufpane)
         if file then
             local diagnostics = file.diagnostics
             for idx, diagnostic in pairs(diagnostics) do
-                local startLoc, _ = LSPRange.toLocs(diagnostic.range)
+                local startLoc, _ = LSPRange.toLocs(buf, diagnostic.range)
                 if cursor.Loc.Y == startLoc.Y then
                     found = true
                     local bufContents = string.format(
@@ -1242,7 +1308,7 @@ function onBeforeTextEvent(buf, tevent)
         table.insert(
             changes,
             {
-                range = LSPRange.fromDelta(delta),
+                range = LSPRange.fromDelta(buf, delta),
                 text = util.String(delta.Text)
             }
         )
@@ -1297,7 +1363,7 @@ function handleUndosRedos(buf, elem, numChanges)
         local tev = tevents[#tevents + 1 - i]
         for _, delta in userdataIterator(tev.Deltas) do
             local text = ""
-            local range = LSPRange.fromDelta(delta)
+            local range = LSPRange.fromDelta(buf, delta)
 
             if tev.EventType == TextEventType.INSERT then
                 range["end"] = range["start"]
@@ -1307,6 +1373,7 @@ function handleUndosRedos(buf, elem, numChanges)
                 text = util.String(buf:Substr(-delta.Start, -delta.End))
                 range["end"] = {
                     line = delta.Start.Y,
+                    -- FIXME: these are utf-32 but should be utf-16
                     character = delta.Start.X + util.CharacterCountInString(delta.Text)
                 }
             end
@@ -1414,7 +1481,7 @@ function showDiagnostics(buf, owner, diagnostics)
                 msgType = buffer.MTError
             end
 
-            local startLoc, endLoc = LSPRange.toLocs(diagnostic.range)
+            local startLoc, endLoc = LSPRange.toLocs(buf, diagnostic.range)
 
             -- prevent underlining empty space at the ends of lines
             -- (fix pylsp being off-by-one with endLoc.X)
@@ -1478,7 +1545,7 @@ function pathFromAbsPath(absPath)
     return relPath
 end
 
-function openFileAtLoc(filePath, loc)
+function openFileAtPos(filePath, pos)
     -- don't open a new tab if file is already open
     local function openExistingBufPane(fpath)
         for tabIdx, paneIdx, bp in bufpaneIterator() do
@@ -1507,7 +1574,7 @@ function openFileAtLoc(filePath, loc)
     bp.Buf:ClearCursors() -- remove multicursors
     local cursor = bp.Buf:GetActiveCursor()
     cursor:Deselect(false) -- clear selection
-    cursor:GotoLoc(loc)
+    cursor:GotoLoc(LSPPosition.toLoc(bp.Buf, pos))
     bp.Buf:RelocateCursors() -- make sure cursor is inside the buffer
     bp:Center()
 end
@@ -1674,7 +1741,7 @@ function applyTextEdits(buf, edits)
     table.sort(edits, sortEditsLastFirst)
 
     for i, edit in ipairs(edits) do
-        local startLoc, endLoc = LSPRange.toLocs(edit.range)
+        local startLoc, endLoc = LSPRange.toLocs(buf, edit.range)
 
         if edit.newText == "" then
             buf:Remove(startLoc, endLoc)
@@ -1752,6 +1819,5 @@ function gotoLSPLocation(result)
 
     -- now result should be Location
     local filePath = absPathFromFileUri(result.uri)
-    local startLoc, _ = LSPRange.toLocs(result.range)
-    openFileAtLoc(filePath, startLoc)
+    openFileAtPos(filePath, result.range.start)
 end
